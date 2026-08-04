@@ -1,5 +1,7 @@
 const { Server } = require('socket.io');
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
 const {
   createRoom,
   addPlayer,
@@ -12,8 +14,21 @@ const {
 
 const PORT = process.env.PORT || 3000;
 
-const rooms = new Map(); // roomId -> room
-const socketRoom = new Map(); // socketId -> {roomId, playerId}
+function serveClient(req, res) {
+  if (req.url.startsWith('/socket.io')) return;
+  fs.readFile(path.join(__dirname, 'test-client.html'), (err, data) => {
+    if (err) {
+      res.writeHead(500);
+      res.end('לא נמצא test-client.html');
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(data);
+  });
+}
+
+const rooms = new Map();
+const socketRoom = new Map();
 
 function broadcastRoomState(io, room) {
   for (const player of room.players) {
@@ -26,7 +41,7 @@ function broadcastRoomState(io, room) {
   }
 }
 
-const httpServer = http.createServer();
+const httpServer = http.createServer(serveClient);
 const io = new Server(httpServer, { cors: { origin: '*' } });
 
 io.on('connection', (socket) => {
@@ -89,12 +104,10 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    // MVP: לא מסירים שחקן מהחדר בניתוק - מאפשר reconnect באותה יד.
-    // אם צריך timeout/ניקוי חדרים ישנים, זה המקום להוסיף אותו בהמשך.
     socketRoom.delete(socket.id);
   });
 });
 
-httpServer.listen(PORT, () => {
+httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`patzpatz server listening on :${PORT}`);
 });
