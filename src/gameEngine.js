@@ -20,6 +20,8 @@ function createRoom(roomId, boardValue = 10) {
     splits: {},
     lockedPlayers: new Set(),
     result: null,
+    manualScores: {},
+    scoreDirty: new Set(),
   };
 }
 
@@ -28,6 +30,25 @@ function addPlayer(room, playerId, name) {
   if (room.players.some((p) => p.id === playerId)) return;
   if (room.players.length >= MAX_PLAYERS) throw new Error('החדר מלא (מקסימום 4 שחקנים)');
   room.players.push({ id: playerId, name });
+  if (!(playerId in room.manualScores)) room.manualScores[playerId] = 0;
+}
+
+function updateManualScore(room, playerId, value) {
+  if (!room.players.some((p) => p.id === playerId)) throw new Error('שחקן לא נמצא בחדר');
+  room.manualScores[playerId] = Number(value) || 0;
+  room.scoreDirty.add(playerId);
+
+  const ids = room.players.map((p) => p.id);
+  const notDirty = ids.filter((id) => !room.scoreDirty.has(id));
+  if (ids.length >= 2 && notDirty.length === 1) {
+    const lastId = notDirty[0];
+    const sum = ids
+      .filter((id) => id !== lastId)
+      .reduce((acc, id) => acc + (room.manualScores[id] || 0), 0);
+    room.manualScores[lastId] = -sum;
+  }
+
+  return { scores: { ...room.manualScores }, dirty: [...room.scoreDirty] };
 }
 
 function startHand(room) {
@@ -137,6 +158,8 @@ function getStateForPlayer(room, viewerId) {
     boardValue: room.boardValue,
     phase: room.phase,
     players: room.players.map((p) => ({ id: p.id, name: p.name, locked: room.lockedPlayers.has(p.id) })),
+    scores: { ...room.manualScores },
+    scoreDirty: [...room.scoreDirty],
   };
 
   if (room.phase === 'waiting') return base;
@@ -165,6 +188,7 @@ module.exports = {
   allPlayersLocked,
   resolveHand,
   getStateForPlayer,
+  updateManualScore,
   NUM_BOARDS,
   MIN_PLAYERS,
   MAX_PLAYERS,
