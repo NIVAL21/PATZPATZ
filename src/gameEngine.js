@@ -22,6 +22,7 @@ function createRoom(roomId, boardValue = 10) {
     result: null,
     manualScores: {},
     scoreDirty: new Set(),
+    boardWinners: {},
   };
 }
 
@@ -82,6 +83,7 @@ function startHand(room) {
   room.splits = {};
   room.lockedPlayers = new Set();
   room.result = null;
+  room.boardWinners = {};
   room.phase = 'dealt';
 }
 
@@ -152,6 +154,22 @@ function resolveHand(room) {
   return room.result;
 }
 
+function setBoardWinner(room, boardIndex, playerId) {
+  if (room.phase !== 'revealed') throw new Error('אפשר לסמן מנצח רק אחרי חשיפת הידיים');
+  if (boardIndex < 0 || boardIndex >= NUM_BOARDS) throw new Error('מספר בורד לא תקין');
+  if (playerId !== null && !room.players.some((p) => p.id === playerId)) {
+    throw new Error('שחקן לא נמצא בחדר');
+  }
+
+  if (room.boardWinners[boardIndex] === playerId) {
+    delete room.boardWinners[boardIndex];
+  } else {
+    room.boardWinners[boardIndex] = playerId;
+  }
+
+  return { ...room.boardWinners };
+}
+
 function getStateForPlayer(room, viewerId) {
   const base = {
     id: room.id,
@@ -160,6 +178,7 @@ function getStateForPlayer(room, viewerId) {
     players: room.players.map((p) => ({ id: p.id, name: p.name, locked: room.lockedPlayers.has(p.id) })),
     scores: { ...room.manualScores },
     scoreDirty: [...room.scoreDirty],
+    boardWinners: { ...room.boardWinners },
   };
 
   if (room.phase === 'waiting') return base;
@@ -189,6 +208,7 @@ module.exports = {
   resolveHand,
   getStateForPlayer,
   updateManualScore,
+  setBoardWinner,
   NUM_BOARDS,
   MIN_PLAYERS,
   MAX_PLAYERS,
