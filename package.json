@@ -1,0 +1,13 @@
+{
+  "name": "patzpatz-server",
+  "version": "1.0.0",
+  "description": "שרת ולוגיקת המשחק של פצפץ - פוקר PLO עם 3 בורדים",
+  "main": "server.js",
+  "scripts": {
+    "test": "node test/run-tests.js && node test/gameEngine.test.js",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "socket.io": "^4.7.5"
+  }
+}

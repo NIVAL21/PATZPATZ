@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>פצפץ - קליינט בדיקה</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 480px; margin: 20px auto; padding: 0 12px; }
+  input, button { font-size: 16px; padding: 8px; margin: 4px 0; }
+  input { width: 100%; box-sizing: border-box; }
+  button { width: 100%; cursor: pointer; }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; }
+  .card { display: inline-block; border: 1px solid #999; border-radius: 6px; padding: 6px 8px;
+          margin: 3px; font-weight: bold; cursor: pointer; user-select: none; background: #fff; }
+  .card.red { color: #c0392b; }
+  .card.black { color: #222; }
+  .card.selected { outline: 3px solid #2980b9; }
+  .card.assigned { opacity: 0.35; cursor: default; }
+  .board { border: 1px solid #ccc; border-radius: 8px; padding: 10px; margin: 10px 0; }
+  .board h4 { margin: 0 0 6px 0; }
+  #log { background: #f4f4f4; border-radius: 6px; padding: 8px; font-size: 12px; max-height: 140px;
+         overflow-y: auto; white-space: pre-wrap; margin-top: 16px; }
+  .players li.locked { color: green; }
+  .hidden { display: none; }
+  .net-pos { color: green; font-weight: bold; }
+  .net-neg { color: #c0392b; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h2>פצפץ — קליינט בדיקה</h2>
+
+<div id="setup">
+  <input id="serverUrl" value="http://localhost:3000" placeholder="כתובת שרת">
+  <input id="roomId" value="test1" placeholder="קוד חדר">
+  <input id="playerName" placeholder="השם שלך">
+  <input id="boardValue" value="10" placeholder="שווי בורד">
+  <div class="row">
+    <button onclick="createRoom()">פתח חדר חדש</button>
+    <button onclick="joinRoom()">הצטרף לחדר</button>
+  </div>
+</div>
+
+<div id="roomView" class="hidden">
+  <h3>חדר: <span id="roomIdLabel"></span></h3>
+  <ul id="playersList" class="players"></ul>
+  <button id="startBtn" onclick="startHand()" class="hidden">התחל יד</button>
+
+  <div id="handView" class="hidden">
+    <h4>הקלפים שלך (לחץ על קלף ואז על מספר בורד כדי להקצות)</h4>
+    <div id="myCards"></div>
+
+    <div id="boardsView"></div>
+
+    <button id="submitBtn" onclick="submitSplit()" disabled>נעל חלוקה (0/12 הוקצו)</button>
+  </div>
+
+  <div id="resultView" class="hidden">
+    <h3>תוצאה</h3>
+    <div id="resultContent"></div>
+  </div>
+</div>
+
+<div id="log"></div>
+
+<script>
+let socket = null;
+let myPlayerId = 'p_' + Math.random().toString(36).slice(2, 8);
+let currentAssignment = { 0: [], 1: [], 2: [] };
+let selectedCard = null;
+let lastState = null;
+
+function log(msg) {
+  const el = document.getElementById('log');
+  el.textContent += msg + '\n';
+  el.scrollTop = el.scrollHeight;
+}
+
+function suitClass(cardStr) {
+  const suit = cardStr.slice(-1);
+  return (suit === 'h' || suit === 'd') ? 'red' : 'black';
+}
+
+function connect() {
+  const url = document.getElementById('serverUrl').value;
+  socket = io(url);
+  socket.on('connect', () => log('מחובר לשרת: ' + socket.id));
+  socket.on('disconnect', () => log('התנתק מהשרת'));
+  socket.on('room_state', (state) => {
+    log('עדכון מצב חדר, שלב: ' + state.phase);
+    lastState = state;
+    renderState(state);
+  });
+}
+
+function createRoom() {
+  connect();
+  const roomId = document.getElementById('roomId').value;
+  const name = document.getElementById('playerName').value || 'שחקן';
+  const boardValue = Number(document.getElementById('boardValue').value) || 10;
+  socket.once('connect', () => {
+    socket.emit('create_room', { roomId, playerId: myPlayerId, name, boardValue }, (res) => {
+      if (!res.ok) return log('שגיאה: ' + res.error);
+      log('חדר נפתח בהצלחה');
+      enterRoomView(roomId);
+      renderState(res.state);
+    });
+  });
+}
+
+function joinRoom() {
+  connect();
+  const roomId = document.getElementById('roomId').value;
+  const name = document.getElementById('playerName').value || 'שחקן';
+  socket.once('connect', () => {
+    socket.emit('join_room', { roomId, playerId: myPlayerId, name }, (res) => {
+      if (!res.ok) return log('שגיאה: ' + res.error);
+      log('הצטרפת לחדר בהצלחה');
+      enterRoomView(roomId);
+      renderState(res.state);
+    });
+  });
+}
+
+function enterRoomView(roomId) {
+  document.getElementById('setup').classList.add('hidden');
+  document.getElementById('roomView').classList.remove('hidden');
+  document.getElementById('roomIdLabel').textContent = roomId;
+}
+
+function startHand() {
+  socket.emit('start_hand', {}, (res) => {
+    if (!res.ok) log('שגיאה בהתחלת יד: ' + res.error);
+  });
+}
+
+function renderState(state) {
+  const playersList = document.getElementById('playersList');
+  playersList.innerHTML = '';
+  state.players.forEach((p) => {
+    const li = document.createElement('li');
+    li.textContent = p.name + (p.id === myPlayerId ? ' (אתה)' : '') + (p.locked ? ' ✓ ננעל' : '');
+    if (p.locked) li.className = 'locked';
+    playersList.appendChild(li);
+  });
+
+  document.getElementById('startBtn').classList.toggle('hidden', state.phase !== 'waiting' || state.players.length < 2);
+
+  if (state.phase === 'dealt') {
+    document.getElementById('handView').classList.remove('hidden');
+    document.getElementById('resultView').classList.add('hidden');
+    renderHand(state);
+  } else if (state.phase === 'revealed') {
+    document.getElementById('handView').classList.add('hidden');
+    document.getElementById('resultView').classList.remove('hidden');
+    renderResult(state);
+  }
+}
+
+function cardEl(cardStr, opts = {}) {
+  const div = document.createElement('div');
+  div.className = 'card ' + suitClass(cardStr) + (opts.selected ? ' selected' : '') + (opts.assigned ? ' assigned' : '');
+  div.textContent = cardStr;
+  if (opts.onClick) div.onclick = opts.onClick;
+  return div;
+}
+
+function renderHand(state) {
+  const myCardsEl = document.getElementById('myCards');
+  myCardsEl.innerHTML = '';
+  const assignedCards = new Set([...currentAssignment[0], ...currentAssignment[1], ...currentAssignment[2]]);
+
+  state.myHoleCards.forEach((c) => {
+    const isAssigned = assignedCards.has(c);
+    myCardsEl.appendChild(cardEl(c, {
+      selected: c === selectedCard,
+      assigned: isAssigned,
+      onClick: () => {
+        if (isAssigned) return;
+        selectedCard = (selectedCard === c) ? null : c;
+        renderHand(state);
+      },
+    }));
+  });
+
+  const boardsEl = document.getElementById('boardsView');
+  boardsEl.innerHTML = '';
+  state.boards.forEach((b, i) => {
+    const div = document.createElement('div');
+    div.className = 'board';
+    const h4 = document.createElement('h4');
+    h4.textContent = `בורד ${i + 1} (${currentAssignment[i].length}/4)`;
+    div.appendChild(h4);
+
+    const flopLabel = document.createElement('div');
+    flopLabel.textContent = 'פלופ: ';
+    b.flop.forEach((c) => flopLabel.appendChild(cardEl(c)));
+    div.appendChild(flopLabel);
+
+    const myAssigned = document.createElement('div');
+    myAssigned.textContent = 'הקלפים שהוקצו: ';
+    currentAssignment[i].forEach((c) => {
+      myAssigned.appendChild(cardEl(c, { onClick: () => {
+        currentAssignment[i] = currentAssignment[i].filter((x) => x !== c);
+        renderHand(state);
+      }}));
+    });
+    div.appendChild(myAssigned);
+
+    const assignBtn = document.createElement('button');
+    assignBtn.textContent = `הקצה קלף נבחר לבורד ${i + 1}`;
+    assignBtn.disabled = !selectedCard || currentAssignment[i].length >= 4;
+    assignBtn.onclick = () => {
+      if (!selectedCard) return;
+      currentAssignment[i].push(selectedCard);
+      selectedCard = null;
+      renderHand(state);
+    };
+    div.appendChild(assignBtn);
+
+    boardsEl.appendChild(div);
+  });
+
+  const total = currentAssignment[0].length + currentAssignment[1].length + currentAssignment[2].length;
+  const submitBtn = document.getElementById('submitBtn');
+  submitBtn.textContent = `נעל חלוקה (${total}/12 הוקצו)`;
+  submitBtn.disabled = total !== 12;
+}
+
+function submitSplit() {
+  socket.emit('submit_split', { split: currentAssignment }, (res) => {
+    if (!res.ok) return log('שגיאה בנעילה: ' + res.error);
+    log('החלוקה שלך ננעלה, ממתין לשאר השחקנים...');
+    document.getElementById('submitBtn').disabled = true;
+  });
+}
+
+function renderResult(state) {
+  const content = document.getElementById('resultContent');
+  content.innerHTML = '';
+
+  state.boards.forEach((b, i) => {
+    const div = document.createElement('div');
+    div.className = 'board';
+    div.innerHTML = `<h4>בורד ${i + 1}</h4>`;
+    const cardsRow = document.createElement('div');
+    [...b.flop, b.turn, b.river].forEach((c) => cardsRow.appendChild(cardEl(c)));
+    div.appendChild(cardsRow);
+    content.appendChild(div);
+  });
+
+  const table = document.createElement('table');
+  table.style.width = '100%';
+  table.innerHTML = '<tr><th>שחקן</th><th>נטו</th></tr>';
+  state.players.forEach((p) => {
+    const net = state.result.net[p.id];
+    const tr = document.createElement('tr');
+    const cls = net > 0 ? 'net-pos' : (net < 0 ? 'net-neg' : '');
+    tr.innerHTML = `<td>${p.name}</td><td class="${cls}">${net > 0 ? '+' : ''}${net}</td>`;
+    table.appendChild(tr);
+  });
+  content.appendChild(table);
+
+  const holeHeader = document.createElement('h4');
+  holeHeader.textContent = 'קלפי כל השחקנים';
+  content.appendChild(holeHeader);
+  state.players.forEach((p) => {
+    const div = document.createElement('div');
+    div.textContent = p.name + ': ';
+    state.holeCards[p.id].forEach((c) => div.appendChild(cardEl(c)));
+    content.appendChild(div);
+  });
+}
+</script>
+</body>
+</html>
