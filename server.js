@@ -11,6 +11,7 @@ const {
   resolveHand,
   getStateForPlayer,
   updateManualScore,
+  setBoardWinner,
 } = require('./src/gameEngine');
 
 const PORT = process.env.PORT || 3000;
@@ -111,6 +112,19 @@ io.on('connection', (socket) => {
       if (!room) throw new Error('חדר לא נמצא');
       const scoreState = updateManualScore(room, targetPlayerId, value);
       io.to(room.id).emit('score_update', scoreState);
+      ack?.({ ok: true });
+    } catch (e) {
+      ack?.({ ok: false, error: e.message });
+    }
+  });
+
+  socket.on('set_board_winner', ({ board, playerId }, ack) => {
+    try {
+      const entry = socketRoom.get(socket.id);
+      const room = rooms.get(entry?.roomId);
+      if (!room) throw new Error('חדר לא נמצא');
+      const boardWinners = setBoardWinner(room, board, playerId);
+      io.to(room.id).emit('board_winner_update', { boardWinners });
       ack?.({ ok: true });
     } catch (e) {
       ack?.({ ok: false, error: e.message });
