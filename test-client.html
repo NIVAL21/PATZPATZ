@@ -233,7 +233,8 @@ let myPlayerId = 'p_' + Math.random().toString(36).slice(2, 8);
 let currentAssignment = { 0: [], 1: [], 2: [] };
 let selectedCard = null;
 let lastPhase = null;
-let lastRevealedState = null;
+let isLocked = false;
+let lastDealtState = null;
 
 window.addEventListener('DOMContentLoaded', () => {
   if (window.location.protocol.startsWith('http')) {
@@ -263,6 +264,7 @@ function connect() {
     if (state.phase === 'dealt' && lastPhase !== 'dealt') {
       currentAssignment = { 0: [], 1: [], 2: [] };
       selectedCard = null;
+      isLocked = false;
     }
     lastPhase = state.phase;
     renderState(state);
@@ -374,7 +376,13 @@ function renderState(state) {
   playersList.innerHTML = '';
   state.players.forEach((p) => {
     const li = document.createElement('li');
-    li.textContent = p.name + (p.id === myPlayerId ? ' (אתה)' : '') + (p.locked ? ' ✓ ננעל' : '');
+    let statusText = '';
+    if (state.phase === 'dealt') {
+      statusText = p.locked ? ' — ✅ ננעל' : ' — 🕐 בוחר קלפים...';
+    } else if (p.locked) {
+      statusText = ' ✓ ננעל';
+    }
+    li.textContent = p.name + (p.id === myPlayerId ? ' (אתה)' : '') + statusText;
     if (p.locked) li.className = 'locked';
     playersList.appendChild(li);
   });
@@ -410,6 +418,7 @@ function cardEl(cardStr, opts = {}) {
 }
 
 function renderHand(state) {
+  lastDealtState = state;
   const myCardsEl = document.getElementById('myCards');
   myCardsEl.innerHTML = '';
   const assignedCards = new Set([...currentAssignment[0], ...currentAssignment[1], ...currentAssignment[2]]);
@@ -419,7 +428,7 @@ function renderHand(state) {
     myCardsEl.appendChild(cardEl(c, {
       selected: c === selectedCard,
       assigned: isAssigned,
-      onClick: () => {
+      onClick: isLocked ? undefined : () => {
         if (isAssigned) return;
         selectedCard = (selectedCard === c) ? null : c;
         renderHand(state);
@@ -444,7 +453,7 @@ function renderHand(state) {
     const myAssigned = document.createElement('div');
     myAssigned.appendChild(document.createTextNode('הקלפים שהוקצו: '));
     currentAssignment[i].forEach((c) => {
-      myAssigned.appendChild(cardEl(c, { onClick: () => {
+      myAssigned.appendChild(cardEl(c, isLocked ? {} : { onClick: () => {
         currentAssignment[i] = currentAssignment[i].filter((x) => x !== c);
         renderHand(state);
       }}));
@@ -453,9 +462,9 @@ function renderHand(state) {
 
     const assignBtn = document.createElement('button');
     assignBtn.textContent = `הקצה קלף נבחר לבורד ${i + 1}`;
-    assignBtn.disabled = !selectedCard || currentAssignment[i].length >= 4;
+    assignBtn.disabled = isLocked || !selectedCard || currentAssignment[i].length >= 4;
     assignBtn.onclick = () => {
-      if (!selectedCard) return;
+      if (isLocked || !selectedCard) return;
       currentAssignment[i].push(selectedCard);
       selectedCard = null;
       renderHand(state);
@@ -467,17 +476,25 @@ function renderHand(state) {
 
   const total = currentAssignment[0].length + currentAssignment[1].length + currentAssignment[2].length;
   const submitBtn = document.getElementById('submitBtn');
-  submitBtn.textContent = `נעל חלוקה (${total}/12 הוקצו)`;
-  submitBtn.disabled = total !== 12;
+  if (isLocked) {
+    submitBtn.textContent = 'ננעל ✓ — ממתין לשאר השחקנים...';
+    submitBtn.disabled = true;
+  } else {
+    submitBtn.textContent = `נעל חלוקה (${total}/12 הוקצו)`;
+    submitBtn.disabled = total !== 12;
+  }
 }
 
 function submitSplit() {
   socket.emit('submit_split', { split: currentAssignment }, (res) => {
     if (!res.ok) return log('שגיאה בנעילה: ' + res.error);
     log('החלוקה שלך ננעלה, ממתין לשאר השחקנים...');
-    document.getElementById('submitBtn').disabled = true;
+    isLocked = true;
+    if (lastDealtState) renderHand(lastDealtState);
   });
 }
+
+let lastRevealedState = null;
 
 function renderResult(state) {
   lastRevealedState = state;
