@@ -122,6 +122,20 @@
     box-shadow: 0 0 18px 5px rgba(255,215,106,0.85), 0 2px 4px rgba(0,0,0,0.5);
     transform: translateY(-2px);
   }
+  .card.used-glow {
+    outline: 3px solid #4fd8d8;
+    box-shadow: 0 0 14px 4px rgba(79,216,216,0.75), 0 2px 4px rgba(0,0,0,0.5);
+  }
+  .card.faded { opacity: 0.35; filter: grayscale(50%); }
+
+  .category-badge {
+    display: inline-block; padding: 2px 10px; border-radius: 999px;
+    background: rgba(79,216,216,0.18); border: 1px solid #4fd8d8; color: #9fefef;
+    font-size: 11px; font-weight: 700;
+  }
+  .auto-winner-line {
+    margin: 8px 0 4px; font-size: 12px; color: var(--gold-light); font-weight: 700;
+  }
 
   .mark-winner-btn {
     width: auto; margin: 0; padding: 4px 12px; font-size: 11px;
@@ -411,10 +425,20 @@ function cardEl(cardStr, opts = {}) {
     + (opts.selected ? ' selected' : '')
     + (opts.assigned ? ' assigned' : '')
     + (opts.winner ? ' winner-glow' : '')
+    + (opts.used ? ' used-glow' : '')
+    + (opts.faded ? ' faded' : '')
     + (opts.onClick ? '' : ' static');
   div.innerHTML = `<span class="rank">${rank}</span><span class="suit-big">${symbol}</span>`;
   if (opts.onClick) div.onclick = opts.onClick;
   return div;
+}
+
+const RANK_ORDER = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'];
+function rankValue(cardStr) {
+  return RANK_ORDER.indexOf(cardStr.slice(0, -1));
+}
+function sortByRankDesc(cards) {
+  return [...cards].sort((a, b) => rankValue(b) - rankValue(a));
 }
 
 function renderHand(state) {
@@ -423,7 +447,7 @@ function renderHand(state) {
   myCardsEl.innerHTML = '';
   const assignedCards = new Set([...currentAssignment[0], ...currentAssignment[1], ...currentAssignment[2]]);
 
-  state.myHoleCards.forEach((c) => {
+  sortByRankDesc(state.myHoleCards).forEach((c) => {
     const isAssigned = assignedCards.has(c);
     myCardsEl.appendChild(cardEl(c, {
       selected: c === selectedCard,
@@ -494,6 +518,19 @@ function submitSplit() {
   });
 }
 
+const CATEGORY_NAMES = ['HIGH CARD', 'PAIR', 'TWO PAIR', 'THREE OF A KIND', 'STRAIGHT',
+  'FLUSH', 'FULL HOUSE', 'FOUR OF A KIND', 'STRAIGHT FLUSH'];
+
+function compareHandRank(a, b) {
+  const len = Math.max(a.length, b.length);
+  for (let i = 0; i < len; i++) {
+    const av = a[i] ?? -1;
+    const bv = b[i] ?? -1;
+    if (av !== bv) return av - bv;
+  }
+  return 0;
+}
+
 let lastRevealedState = null;
 
 function renderResult(state) {
@@ -502,6 +539,7 @@ function renderResult(state) {
   content.innerHTML = '';
 
   const boardWinners = state.boardWinners || {};
+  const result = state.result;
 
   state.boards.forEach((b, i) => {
     const div = document.createElement('div');
@@ -514,13 +552,43 @@ function renderResult(state) {
     [...b.flop, b.turn, b.river].forEach((c) => cardsRow.appendChild(cardEl(c)));
     div.appendChild(cardsRow);
 
+    if (result) {
+      let bestId = null;
+      let bestRank = null;
+      let tie = false;
+      state.players.forEach((p) => {
+        const rank = result.handRanksByPlayer[p.id][i];
+        const cmp = bestRank === null ? 1 : compareHandRank(rank, bestRank);
+        if (cmp > 0) {
+          bestRank = rank; bestId = p.id; tie = false;
+        } else if (cmp === 0 && bestRank !== null) {
+          tie = true;
+        }
+      });
+
+      const autoLine = document.createElement('div');
+      autoLine.className = 'auto-winner-line';
+      if (tie) {
+        autoLine.textContent = '🤖 חישוב אוטומטי: תיקו בבורד זה';
+      } else {
+        const winnerName = state.players.find((p) => p.id === bestId)?.name;
+        const winnerCat = CATEGORY_NAMES[bestRank[0]];
+        autoLine.textContent = `🤖 חישוב אוטומטי: ${winnerName} מנצח עם ${winnerCat}`;
+      }
+      div.appendChild(autoLine);
+    }
+
     state.players.forEach((p) => {
       const isWinner = boardWinners[i] === p.id;
       const hasWinner = boardWinners[i] !== undefined;
       const isLoser = hasWinner && !isWinner;
 
+      const bestForBoard = result ? result.bestHandCardsByPlayer[p.id][i] : null;
+      const holeUsed = bestForBoard ? new Set(bestForBoard.slice(0, 2)) : new Set();
+      const boardUsed = bestForBoard ? new Set(bestForBoard.slice(2, 5)) : new Set();
+
       const pDiv = document.createElement('div');
-      pDiv.style.marginTop = '8px';
+      pDiv.style.marginTop = '10px';
       pDiv.style.fontSize = '13px';
 
       const nameRow = document.createElement('div');
@@ -530,8 +598,16 @@ function renderResult(state) {
       nameRow.style.flexWrap = 'wrap';
 
       const label = document.createElement('span');
-      label.textContent = `${p.name} שיבץ לבורד זה:`;
+      label.textContent = `${p.name}:`;
       nameRow.appendChild(label);
+
+      if (result) {
+        const rank = result.handRanksByPlayer[p.id][i];
+        const badge = document.createElement('span');
+        badge.className = 'category-badge';
+        badge.textContent = CATEGORY_NAMES[rank[0]];
+        nameRow.appendChild(badge);
+      }
 
       const markBtn = document.createElement('button');
       let btnClass = 'mark-winner-btn';
@@ -552,9 +628,29 @@ function renderResult(state) {
 
       pDiv.appendChild(nameRow);
 
+      const splitLabel = document.createElement('div');
+      splitLabel.textContent = 'שיבץ לבורד זה (2 מודגשים = נכנסו לחמישייה):';
+      pDiv.appendChild(splitLabel);
       const splitRow = document.createElement('div');
-      state.splits[p.id][i].forEach((c) => splitRow.appendChild(cardEl(c, { winner: isWinner })));
+      state.splits[p.id][i].forEach((c) => {
+        const opts = isWinner
+          ? { winner: true }
+          : { used: holeUsed.has(c), faded: bestForBoard ? !holeUsed.has(c) : false };
+        splitRow.appendChild(cardEl(c, opts));
+      });
       pDiv.appendChild(splitRow);
+
+      if (bestForBoard) {
+        const boardLabel = document.createElement('div');
+        boardLabel.textContent = 'קלפי הבורד בשימוש (3 מודגשים):';
+        pDiv.appendChild(boardLabel);
+        const boardUsedRow = document.createElement('div');
+        [...b.flop, b.turn, b.river].forEach((c) => {
+          boardUsedRow.appendChild(cardEl(c, { used: boardUsed.has(c), faded: !boardUsed.has(c) }));
+        });
+        pDiv.appendChild(boardUsedRow);
+      }
+
       div.appendChild(pDiv);
     });
 
