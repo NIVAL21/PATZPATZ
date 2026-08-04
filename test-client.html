@@ -117,6 +117,22 @@
   .card.selected { outline: 3px solid var(--gold); box-shadow: 0 0 10px rgba(217,164,65,0.8); }
   .card.assigned { opacity: 0.3; cursor: default; filter: grayscale(70%); }
   .card.static { cursor: default; }
+  .card.winner-glow {
+    outline: 3px solid #ffd76a;
+    box-shadow: 0 0 18px 5px rgba(255,215,106,0.85), 0 2px 4px rgba(0,0,0,0.5);
+    transform: translateY(-2px);
+  }
+
+  .mark-winner-btn {
+    width: auto; margin: 0; padding: 4px 12px; font-size: 11px;
+    border-radius: 999px; border: 1.5px solid var(--gold);
+    background: rgba(0,0,0,0.35); color: var(--gold-light);
+    box-shadow: none;
+  }
+  .mark-winner-btn.active {
+    background: linear-gradient(180deg, #ffe08a, #d9a441);
+    color: #241512; border-color: #fff2c8;
+  }
 
   .board {
     border: 1px solid rgba(217,164,65,0.5);
@@ -213,6 +229,7 @@ let myPlayerId = 'p_' + Math.random().toString(36).slice(2, 8);
 let currentAssignment = { 0: [], 1: [], 2: [] };
 let selectedCard = null;
 let lastPhase = null;
+let lastRevealedState = null;
 
 window.addEventListener('DOMContentLoaded', () => {
   if (window.location.protocol.startsWith('http')) {
@@ -248,6 +265,12 @@ function connect() {
   });
   socket.on('score_update', ({ scores }) => {
     applyScores(scores);
+  });
+  socket.on('board_winner_update', ({ boardWinners }) => {
+    if (lastRevealedState) {
+      lastRevealedState.boardWinners = boardWinners;
+      renderResult(lastRevealedState);
+    }
   });
 }
 
@@ -375,6 +398,7 @@ function cardEl(cardStr, opts = {}) {
   div.className = 'card ' + (isRed ? 'red' : 'black')
     + (opts.selected ? ' selected' : '')
     + (opts.assigned ? ' assigned' : '')
+    + (opts.winner ? ' winner-glow' : '')
     + (opts.onClick ? '' : ' static');
   div.innerHTML = `<span class="rank">${rank}</span><span class="suit-big">${symbol}</span>`;
   if (opts.onClick) div.onclick = opts.onClick;
@@ -452,8 +476,11 @@ function submitSplit() {
 }
 
 function renderResult(state) {
+  lastRevealedState = state;
   const content = document.getElementById('resultContent');
   content.innerHTML = '';
+
+  const boardWinners = state.boardWinners || {};
 
   state.boards.forEach((b, i) => {
     const div = document.createElement('div');
@@ -467,12 +494,34 @@ function renderResult(state) {
     div.appendChild(cardsRow);
 
     state.players.forEach((p) => {
+      const isWinner = boardWinners[i] === p.id;
+
       const pDiv = document.createElement('div');
       pDiv.style.marginTop = '8px';
       pDiv.style.fontSize = '13px';
-      pDiv.appendChild(document.createTextNode(`${p.name} שיבץ לבורד זה: `));
+
+      const nameRow = document.createElement('div');
+      nameRow.style.display = 'flex';
+      nameRow.style.alignItems = 'center';
+      nameRow.style.gap = '8px';
+      nameRow.style.flexWrap = 'wrap';
+
+      const label = document.createElement('span');
+      label.textContent = `${p.name} שיבץ לבורד זה:`;
+      nameRow.appendChild(label);
+
+      const markBtn = document.createElement('button');
+      markBtn.textContent = isWinner ? '👑 מנצח הבורד' : 'סמן כמנצח';
+      markBtn.className = 'mark-winner-btn' + (isWinner ? ' active' : '');
+      markBtn.onclick = () => {
+        socket.emit('set_board_winner', { board: i, playerId: p.id });
+      };
+      nameRow.appendChild(markBtn);
+
+      pDiv.appendChild(nameRow);
+
       const splitRow = document.createElement('div');
-      state.splits[p.id][i].forEach((c) => splitRow.appendChild(cardEl(c)));
+      state.splits[p.id][i].forEach((c) => splitRow.appendChild(cardEl(c, { winner: isWinner })));
       pDiv.appendChild(splitRow);
       div.appendChild(pDiv);
     });
