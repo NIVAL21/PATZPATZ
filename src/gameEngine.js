@@ -12,12 +12,12 @@ function createRoom(roomId, boardValue = 10) {
   return {
     id: roomId,
     boardValue,
-    phase: 'waiting', // waiting -> dealt -> revealed
-    players: [], // [{id, name}]
+    phase: 'waiting',
+    players: [],
     deck: null,
-    holeCards: {}, // playerId -> [12 card strings]
-    boards: null, // [{flop:[3], turn, river}] אמת מלאה, בצד שרת בלבד
-    splits: {}, // playerId -> {0:[4 cards],1:[...],2:[...]}
+    holeCards: {},
+    boards: null,
+    splits: {},
     lockedPlayers: new Set(),
     result: null,
   };
@@ -25,7 +25,7 @@ function createRoom(roomId, boardValue = 10) {
 
 function addPlayer(room, playerId, name) {
   if (room.phase !== 'waiting') throw new Error('היד כבר התחילה, אי אפשר להצטרף עכשיו');
-  if (room.players.some((p) => p.id === playerId)) return; // כבר בחדר
+  if (room.players.some((p) => p.id === playerId)) return;
   if (room.players.length >= MAX_PLAYERS) throw new Error('החדר מלא (מקסימום 4 שחקנים)');
   room.players.push({ id: playerId, name });
 }
@@ -64,11 +64,6 @@ function startHand(room) {
   room.phase = 'dealt';
 }
 
-/**
- * @param {object} split - { 0: [card,card,card,card], 1: [...], 2: [...] }
- * שולח שגיאה אם הקלפים לא תואמים בדיוק ל-12 הקלפים של השחקן, ללא כפילויות,
- * ובדיוק 4 לכל בורד.
- */
 function submitSplit(room, playerId, split) {
   if (room.phase !== 'dealt') throw new Error('אי אפשר להגיש חלוקה בשלב הנוכחי');
   if (room.lockedPlayers.has(playerId)) throw new Error('החלוקה כבר ננעלה, אי אפשר לשנות');
@@ -105,10 +100,6 @@ function allPlayersLocked(room) {
   return room.players.every((p) => room.lockedPlayers.has(p.id));
 }
 
-/**
- * מחשב את תוצאת היד המלאה: היד הכי טובה של כל שחקן בכל בורד + תשלומים.
- * קורא רק אחרי שכל השחקנים ננעלו.
- */
 function resolveHand(room) {
   if (!allPlayersLocked(room)) throw new Error('לא כל השחקנים ננעלו עדיין');
 
@@ -140,9 +131,6 @@ function resolveHand(room) {
   return room.result;
 }
 
-/**
- * מצב מסונן ללקוח ספציפי: לא חושף קלפי יריבים או טרן/ריבר לפני החשיפה.
- */
 function getStateForPlayer(room, viewerId) {
   const base = {
     id: room.id,
@@ -157,3 +145,27 @@ function getStateForPlayer(room, viewerId) {
   base.boards = room.boards.map((b) => ({
     flop: b.flop,
     turn: room.phase === 'revealed' ? b.turn : null,
+    river: room.phase === 'revealed' ? b.river : null,
+  }));
+
+  if (room.phase === 'revealed') {
+    base.holeCards = room.holeCards;
+    base.splits = room.splits;
+    base.result = room.result;
+  }
+
+  return base;
+}
+
+module.exports = {
+  createRoom,
+  addPlayer,
+  startHand,
+  submitSplit,
+  allPlayersLocked,
+  resolveHand,
+  getStateForPlayer,
+  NUM_BOARDS,
+  MIN_PLAYERS,
+  MAX_PLAYERS,
+};
