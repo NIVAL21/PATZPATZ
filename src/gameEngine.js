@@ -31,6 +31,7 @@ function addPlayer(room, playerId, name) {
 }
 
 function startHand(room) {
+  if (room.phase === 'dealt') throw new Error('יד עדיין באמצע - אי אפשר להתחיל יד חדשה עכשיו');
   if (room.players.length < MIN_PLAYERS) throw new Error(`נדרשים לפחות ${MIN_PLAYERS} שחקנים`);
   if (room.players.length > MAX_PLAYERS) throw new Error(`מקסימום ${MAX_PLAYERS} שחקנים`);
 
@@ -156,26 +157,3 @@ function getStateForPlayer(room, viewerId) {
   base.boards = room.boards.map((b) => ({
     flop: b.flop,
     turn: room.phase === 'revealed' ? b.turn : null,
-    river: room.phase === 'revealed' ? b.river : null,
-  }));
-
-  if (room.phase === 'revealed') {
-    base.holeCards = room.holeCards; // כולם גלויים בחשיפה, כמו showdown
-    base.result = room.result;
-  }
-
-  return base;
-}
-
-module.exports = {
-  createRoom,
-  addPlayer,
-  startHand,
-  submitSplit,
-  allPlayersLocked,
-  resolveHand,
-  getStateForPlayer,
-  NUM_BOARDS,
-  MIN_PLAYERS,
-  MAX_PLAYERS,
-};
