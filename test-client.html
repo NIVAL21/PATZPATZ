@@ -156,6 +156,8 @@
   .score-row input[type="number"] {
     width: 90px; margin: 0; text-align: center; font-weight: 700;
   }
+  .score-row input[type="number"].pos { color: #6fd68f; border-color: #6fd68f; }
+  .score-row input[type="number"].neg { color: #ff8080; border-color: #ff8080; }
 </style>
 </head>
 <body>
@@ -288,11 +290,37 @@ function startHand() {
 }
 
 let lastScorePlayerIds = '';
+let dirtyScoreIds = new Set();
+
+function updateScoreColor(input) {
+  const val = Number(input.value) || 0;
+  input.classList.remove('pos', 'neg');
+  if (val > 0) input.classList.add('pos');
+  else if (val < 0) input.classList.add('neg');
+}
+
+function maybeAutoCompleteScore(players) {
+  if (players.length < 2) return;
+  const inputs = players.map((p) => ({
+    id: p.id,
+    el: document.querySelector(`#scoreRows input[data-player-id="${p.id}"]`),
+  }));
+
+  const dirty = inputs.filter((i) => dirtyScoreIds.has(i.id));
+  const notDirty = inputs.filter((i) => !dirtyScoreIds.has(i.id));
+
+  if (dirty.length === players.length - 1 && notDirty.length === 1) {
+    const sum = dirty.reduce((acc, i) => acc + (Number(i.el.value) || 0), 0);
+    notDirty[0].el.value = -sum;
+    updateScoreColor(notDirty[0].el);
+  }
+}
 
 function renderScoreBox(players) {
   const idsKey = players.map((p) => p.id).join(',');
   if (idsKey === lastScorePlayerIds) return;
   lastScorePlayerIds = idsKey;
+  dirtyScoreIds = new Set();
 
   const container = document.getElementById('scoreRows');
   container.innerHTML = '';
@@ -307,6 +335,12 @@ function renderScoreBox(players) {
     const input = document.createElement('input');
     input.type = 'number';
     input.value = '0';
+    input.dataset.playerId = p.id;
+    input.oninput = () => {
+      dirtyScoreIds.add(p.id);
+      updateScoreColor(input);
+      maybeAutoCompleteScore(players);
+    };
 
     row.appendChild(name);
     row.appendChild(input);
