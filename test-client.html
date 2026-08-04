@@ -103,7 +103,6 @@
   .row { display: flex; gap: 8px; }
   .row > * { flex: 1; }
 
-  /* קלפים */
   .card {
     display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
     width: 44px; height: 60px; border: 1px solid #c9c2b4; border-radius: 7px; margin: 3px;
@@ -148,7 +147,15 @@
     border: 2px solid var(--gold); border-radius: 10px; padding: 10px 12px; margin: 14px 0;
     background: linear-gradient(160deg, rgba(179,18,42,0.25), rgba(0,0,0,0.35));
   }
-  #scoreBox textarea { min-height: 70px; resize: vertical; background: rgba(0,0,0,0.4); }
+  .score-row {
+    display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    padding: 6px 0; border-bottom: 1px solid rgba(217,164,65,0.2);
+  }
+  .score-row:last-child { border-bottom: none; }
+  .score-row .score-name { font-weight: 700; color: var(--cream); flex: 1; }
+  .score-row input[type="number"] {
+    width: 90px; margin: 0; text-align: center; font-weight: 700;
+  }
 </style>
 </head>
 <body>
@@ -173,10 +180,9 @@
   <ul id="playersList" class="players"></ul>
   <button id="startBtn" onclick="startHand()" class="hidden">התחל יד</button>
 
-  <!-- תיבת התוצאה הידנית - לא נמחקת בין ידיים -->
   <div id="scoreBox">
-    <h4>התוצאה המצטברת (ידני)</h4>
-    <textarea id="manualScore" placeholder="לדוגמה:&#10;אבי: +20&#10;דני: -20"></textarea>
+    <h4>התוצאה המצטברת</h4>
+    <div id="scoreRows"></div>
   </div>
 
   <div id="handView" class="hidden">
@@ -281,6 +287,33 @@ function startHand() {
   });
 }
 
+let lastScorePlayerIds = '';
+
+function renderScoreBox(players) {
+  const idsKey = players.map((p) => p.id).join(',');
+  if (idsKey === lastScorePlayerIds) return;
+  lastScorePlayerIds = idsKey;
+
+  const container = document.getElementById('scoreRows');
+  container.innerHTML = '';
+  players.forEach((p) => {
+    const row = document.createElement('div');
+    row.className = 'score-row';
+
+    const name = document.createElement('span');
+    name.className = 'score-name';
+    name.textContent = p.name;
+
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.value = '0';
+
+    row.appendChild(name);
+    row.appendChild(input);
+    container.appendChild(row);
+  });
+}
+
 function renderState(state) {
   const playersList = document.getElementById('playersList');
   playersList.innerHTML = '';
@@ -290,6 +323,8 @@ function renderState(state) {
     if (p.locked) li.className = 'locked';
     playersList.appendChild(li);
   });
+
+  renderScoreBox(state.players);
 
   document.getElementById('startBtn').classList.toggle('hidden', state.phase !== 'waiting' || state.players.length < 2);
 
