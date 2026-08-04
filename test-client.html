@@ -246,6 +246,9 @@ function connect() {
     lastPhase = state.phase;
     renderState(state);
   });
+  socket.on('score_update', ({ scores }) => {
+    applyScores(scores);
+  });
 }
 
 function createRoom() {
@@ -290,7 +293,6 @@ function startHand() {
 }
 
 let lastScorePlayerIds = '';
-let dirtyScoreIds = new Set();
 
 function updateScoreColor(input) {
   const val = Number(input.value) || 0;
@@ -299,28 +301,20 @@ function updateScoreColor(input) {
   else if (val < 0) input.classList.add('neg');
 }
 
-function maybeAutoCompleteScore(players) {
-  if (players.length < 2) return;
-  const inputs = players.map((p) => ({
-    id: p.id,
-    el: document.querySelector(`#scoreRows input[data-player-id="${p.id}"]`),
-  }));
-
-  const dirty = inputs.filter((i) => dirtyScoreIds.has(i.id));
-  const notDirty = inputs.filter((i) => !dirtyScoreIds.has(i.id));
-
-  if (dirty.length === players.length - 1 && notDirty.length === 1) {
-    const sum = dirty.reduce((acc, i) => acc + (Number(i.el.value) || 0), 0);
-    notDirty[0].el.value = -sum;
-    updateScoreColor(notDirty[0].el);
-  }
+function applyScores(scores) {
+  Object.entries(scores || {}).forEach(([playerId, value]) => {
+    const input = document.querySelector(`#scoreRows input[data-player-id="${playerId}"]`);
+    if (!input) return;
+    if (document.activeElement === input) return;
+    input.value = value;
+    updateScoreColor(input);
+  });
 }
 
-function renderScoreBox(players) {
+function renderScoreBox(players, scores) {
   const idsKey = players.map((p) => p.id).join(',');
   if (idsKey === lastScorePlayerIds) return;
   lastScorePlayerIds = idsKey;
-  dirtyScoreIds = new Set();
 
   const container = document.getElementById('scoreRows');
   container.innerHTML = '';
@@ -334,12 +328,12 @@ function renderScoreBox(players) {
 
     const input = document.createElement('input');
     input.type = 'number';
-    input.value = '0';
+    input.value = (scores && scores[p.id]) || 0;
     input.dataset.playerId = p.id;
+    updateScoreColor(input);
     input.oninput = () => {
-      dirtyScoreIds.add(p.id);
       updateScoreColor(input);
-      maybeAutoCompleteScore(players);
+      socket.emit('update_score', { targetPlayerId: p.id, value: Number(input.value) || 0 });
     };
 
     row.appendChild(name);
@@ -358,7 +352,7 @@ function renderState(state) {
     playersList.appendChild(li);
   });
 
-  renderScoreBox(state.players);
+  renderScoreBox(state.players, state.scores);
 
   document.getElementById('startBtn').classList.toggle('hidden', state.phase !== 'waiting' || state.players.length < 2);
 
