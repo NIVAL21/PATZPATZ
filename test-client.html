@@ -2,34 +2,160 @@
 <html lang="he" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<title>פצפץ - קליינט בדיקה</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>פצפץ</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Suez+One&family=Rubik:wght@400;500;700;900&display=swap" rel="stylesheet">
 <style>
-  body { font-family: system-ui, sans-serif; max-width: 480px; margin: 20px auto; padding: 0 12px; }
-  input, button { font-size: 16px; padding: 8px; margin: 4px 0; }
-  input { width: 100%; box-sizing: border-box; }
-  button { width: 100%; cursor: pointer; }
+  :root {
+    --black: #0a0705;
+    --black-2: #170f0c;
+    --felt: #0e3d2c;
+    --felt-dark: #082a1f;
+    --red: #b3122a;
+    --red-dark: #7a0c1e;
+    --red-bright: #d81b3f;
+    --gold: #d9a441;
+    --gold-light: #f2d38a;
+    --cream: #f3e6cf;
+    --muted: #b9a992;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: 'Rubik', system-ui, sans-serif;
+    background: radial-gradient(ellipse at top, #241512 0%, var(--black) 65%);
+    color: var(--cream);
+    margin: 0;
+    padding: 18px 10px 60px;
+    min-height: 100vh;
+  }
+
+  .table-frame {
+    max-width: 480px;
+    margin: 0 auto;
+    background: linear-gradient(160deg, var(--felt) 0%, var(--felt-dark) 100%);
+    border: 3px solid var(--gold);
+    border-radius: 18px;
+    box-shadow: 0 0 0 6px var(--black-2), 0 12px 40px rgba(0,0,0,0.6), inset 0 0 60px rgba(0,0,0,0.35);
+    padding: 18px 16px 24px;
+  }
+
+  h2.title {
+    font-family: 'Suez One', serif;
+    text-align: center;
+    font-size: 40px;
+    margin: 4px 0 18px;
+    color: var(--gold-light);
+    letter-spacing: 2px;
+    text-shadow: 0 0 14px rgba(216,27,63,0.55), 0 2px 0 var(--red-dark), 0 4px 8px rgba(0,0,0,0.6);
+  }
+
+  h3, h4 {
+    font-family: 'Rubik', sans-serif;
+    color: var(--gold-light);
+    font-weight: 700;
+  }
+  h3 { font-size: 17px; border-bottom: 1px solid rgba(217,164,65,0.35); padding-bottom: 6px; }
+  h4 { font-size: 14px; margin: 0 0 8px; color: var(--gold); }
+
+  input, textarea {
+    width: 100%;
+    box-sizing: border-box;
+    font-size: 16px;
+    padding: 10px 12px;
+    margin: 5px 0;
+    font-family: inherit;
+    background: rgba(0,0,0,0.35);
+    border: 1px solid rgba(217,164,65,0.4);
+    border-radius: 8px;
+    color: var(--cream);
+  }
+  input::placeholder, textarea::placeholder { color: rgba(243,230,207,0.4); }
+  input:focus, textarea:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 2px rgba(217,164,65,0.25); }
+
+  button {
+    width: 100%;
+    cursor: pointer;
+    font-family: 'Rubik', sans-serif;
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: 0.5px;
+    padding: 12px;
+    margin: 5px 0;
+    border-radius: 999px;
+    border: 1.5px solid var(--gold);
+    background: linear-gradient(180deg, var(--red-bright) 0%, var(--red) 55%, var(--red-dark) 100%);
+    color: var(--cream);
+    box-shadow: 0 3px 0 var(--red-dark), 0 4px 10px rgba(0,0,0,0.4);
+    transition: transform 0.08s ease;
+  }
+  button:hover { filter: brightness(1.08); }
+  button:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--red-dark); }
+  button:disabled {
+    background: #3a332c; border-color: #55493a; color: #8a7d6a;
+    box-shadow: none; cursor: not-allowed;
+  }
+
   .row { display: flex; gap: 8px; }
   .row > * { flex: 1; }
-  .card { display: inline-block; border: 1px solid #999; border-radius: 6px; padding: 6px 8px;
-          margin: 3px; font-weight: bold; cursor: pointer; user-select: none; background: #fff; }
-  .card.red { color: #c0392b; }
-  .card.black { color: #222; }
-  .card.selected { outline: 3px solid #2980b9; }
-  .card.assigned { opacity: 0.35; cursor: default; }
-  .board { border: 1px solid #ccc; border-radius: 8px; padding: 10px; margin: 10px 0; }
-  .board h4 { margin: 0 0 6px 0; }
-  #log { background: #f4f4f4; border-radius: 6px; padding: 8px; font-size: 12px; max-height: 140px;
-         overflow-y: auto; white-space: pre-wrap; margin-top: 16px; }
-  .players li.locked { color: green; }
+
+  /* קלפים */
+  .card {
+    display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
+    width: 44px; height: 60px; border: 1px solid #c9c2b4; border-radius: 7px; margin: 3px;
+    cursor: pointer; user-select: none; background: linear-gradient(180deg, #fffdf7, #f3ecd9);
+    position: relative; vertical-align: top;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+  }
+  .card .rank { position: absolute; top: 3px; right: 5px; font-size: 12px; font-weight: 700; }
+  .card .suit-big { font-size: 22px; line-height: 1; }
+  .card.red { color: var(--red); }
+  .card.black { color: #191512; }
+  .card.selected { outline: 3px solid var(--gold); box-shadow: 0 0 10px rgba(217,164,65,0.8); }
+  .card.assigned { opacity: 0.3; cursor: default; filter: grayscale(70%); }
+  .card.static { cursor: default; }
+
+  .board {
+    border: 1px solid rgba(217,164,65,0.5);
+    border-radius: 10px;
+    padding: 10px 10px 12px;
+    margin: 12px 0;
+    background: radial-gradient(ellipse at top left, rgba(255,255,255,0.05), rgba(0,0,0,0.2));
+  }
+  .board > div { margin-top: 4px; font-size: 13px; color: var(--muted); }
+
+  .players { list-style: none; padding: 0; margin: 6px 0 14px; }
+  .players li {
+    padding: 8px 12px; margin-bottom: 6px; border-radius: 8px;
+    background: rgba(0,0,0,0.3); border: 1px solid rgba(217,164,65,0.25);
+    display: flex; justify-content: space-between; font-size: 14px;
+  }
+  .players li.locked { border-color: #3fae6a; color: #8be3ab; }
+
+  #log {
+    background: rgba(0,0,0,0.45); border: 1px solid rgba(217,164,65,0.2); border-radius: 8px;
+    padding: 8px 10px; font-size: 11px; font-family: 'Courier New', monospace; color: var(--muted);
+    max-height: 110px; overflow-y: auto; white-space: pre-wrap; margin-top: 16px;
+  }
+
   .hidden { display: none; }
-  .net-pos { color: green; font-weight: bold; }
-  .net-neg { color: #c0392b; font-weight: bold; }
+
+  #scoreBox {
+    border: 2px solid var(--gold); border-radius: 10px; padding: 10px 12px; margin: 14px 0;
+    background: linear-gradient(160deg, rgba(179,18,42,0.25), rgba(0,0,0,0.35));
+  }
+  #scoreBox textarea { min-height: 70px; resize: vertical; background: rgba(0,0,0,0.4); }
 </style>
 </head>
 <body>
 
-<h2>פצפץ — קליינט בדיקה</h2>
+<div class="table-frame">
+
+<h2 class="title">פצפץ</h2>
 
 <div id="setup">
   <input id="serverUrl" value="http://localhost:3000" placeholder="כתובת שרת">
@@ -47,6 +173,12 @@
   <ul id="playersList" class="players"></ul>
   <button id="startBtn" onclick="startHand()" class="hidden">התחל יד</button>
 
+  <!-- תיבת התוצאה הידנית - לא נמחקת בין ידיים -->
+  <div id="scoreBox">
+    <h4>התוצאה המצטברת (ידני)</h4>
+    <textarea id="manualScore" placeholder="לדוגמה:&#10;אבי: +20&#10;דני: -20"></textarea>
+  </div>
+
   <div id="handView" class="hidden">
     <h4>הקלפים שלך (לחץ על קלף ואז על מספר בורד כדי להקצות)</h4>
     <div id="myCards"></div>
@@ -57,19 +189,27 @@
   </div>
 
   <div id="resultView" class="hidden">
-    <h3>תוצאה</h3>
+    <h3>תוצאה — כל הבורדים והחלוקות גלויים</h3>
     <div id="resultContent"></div>
+    <button onclick="startHand()">יד חדשה (קלפים חדשים)</button>
   </div>
 </div>
 
 <div id="log"></div>
+
+</div>
 
 <script>
 let socket = null;
 let myPlayerId = 'p_' + Math.random().toString(36).slice(2, 8);
 let currentAssignment = { 0: [], 1: [], 2: [] };
 let selectedCard = null;
-let lastState = null;
+
+window.addEventListener('DOMContentLoaded', () => {
+  if (window.location.protocol.startsWith('http')) {
+    document.getElementById('serverUrl').value = window.location.origin;
+  }
+});
 
 function log(msg) {
   const el = document.getElementById('log');
@@ -77,9 +217,10 @@ function log(msg) {
   el.scrollTop = el.scrollHeight;
 }
 
-function suitClass(cardStr) {
+function suitInfo(cardStr) {
   const suit = cardStr.slice(-1);
-  return (suit === 'h' || suit === 'd') ? 'red' : 'black';
+  const symbols = { s: '♠', h: '♥', d: '♦', c: '♣' };
+  return { symbol: symbols[suit], isRed: suit === 'h' || suit === 'd' };
 }
 
 function connect() {
@@ -89,7 +230,10 @@ function connect() {
   socket.on('disconnect', () => log('התנתק מהשרת'));
   socket.on('room_state', (state) => {
     log('עדכון מצב חדר, שלב: ' + state.phase);
-    lastState = state;
+    if (state.phase === 'dealt') {
+      currentAssignment = { 0: [], 1: [], 2: [] };
+      selectedCard = null;
+    }
     renderState(state);
   });
 }
@@ -147,21 +291,27 @@ function renderState(state) {
 
   document.getElementById('startBtn').classList.toggle('hidden', state.phase !== 'waiting' || state.players.length < 2);
 
+  document.getElementById('handView').classList.add('hidden');
+  document.getElementById('resultView').classList.add('hidden');
+
   if (state.phase === 'dealt') {
     document.getElementById('handView').classList.remove('hidden');
-    document.getElementById('resultView').classList.add('hidden');
     renderHand(state);
   } else if (state.phase === 'revealed') {
-    document.getElementById('handView').classList.add('hidden');
     document.getElementById('resultView').classList.remove('hidden');
     renderResult(state);
   }
 }
 
 function cardEl(cardStr, opts = {}) {
+  const { symbol, isRed } = suitInfo(cardStr);
+  const rank = cardStr.slice(0, -1);
   const div = document.createElement('div');
-  div.className = 'card ' + suitClass(cardStr) + (opts.selected ? ' selected' : '') + (opts.assigned ? ' assigned' : '');
-  div.textContent = cardStr;
+  div.className = 'card ' + (isRed ? 'red' : 'black')
+    + (opts.selected ? ' selected' : '')
+    + (opts.assigned ? ' assigned' : '')
+    + (opts.onClick ? '' : ' static');
+  div.innerHTML = `<span class="rank">${rank}</span><span class="suit-big">${symbol}</span>`;
   if (opts.onClick) div.onclick = opts.onClick;
   return div;
 }
@@ -194,12 +344,12 @@ function renderHand(state) {
     div.appendChild(h4);
 
     const flopLabel = document.createElement('div');
-    flopLabel.textContent = 'פלופ: ';
+    flopLabel.appendChild(document.createTextNode('פלופ: '));
     b.flop.forEach((c) => flopLabel.appendChild(cardEl(c)));
     div.appendChild(flopLabel);
 
     const myAssigned = document.createElement('div');
-    myAssigned.textContent = 'הקלפים שהוקצו: ';
+    myAssigned.appendChild(document.createTextNode('הקלפים שהוקצו: '));
     currentAssignment[i].forEach((c) => {
       myAssigned.appendChild(cardEl(c, { onClick: () => {
         currentAssignment[i] = currentAssignment[i].filter((x) => x !== c);
@@ -243,32 +393,25 @@ function renderResult(state) {
   state.boards.forEach((b, i) => {
     const div = document.createElement('div');
     div.className = 'board';
-    div.innerHTML = `<h4>בורד ${i + 1}</h4>`;
+    const h4 = document.createElement('h4');
+    h4.textContent = `בורד ${i + 1}`;
+    div.appendChild(h4);
+
     const cardsRow = document.createElement('div');
     [...b.flop, b.turn, b.river].forEach((c) => cardsRow.appendChild(cardEl(c)));
     div.appendChild(cardsRow);
-    content.appendChild(div);
-  });
 
-  const table = document.createElement('table');
-  table.style.width = '100%';
-  table.innerHTML = '<tr><th>שחקן</th><th>נטו</th></tr>';
-  state.players.forEach((p) => {
-    const net = state.result.net[p.id];
-    const tr = document.createElement('tr');
-    const cls = net > 0 ? 'net-pos' : (net < 0 ? 'net-neg' : '');
-    tr.innerHTML = `<td>${p.name}</td><td class="${cls}">${net > 0 ? '+' : ''}${net}</td>`;
-    table.appendChild(tr);
-  });
-  content.appendChild(table);
+    state.players.forEach((p) => {
+      const pDiv = document.createElement('div');
+      pDiv.style.marginTop = '8px';
+      pDiv.style.fontSize = '13px';
+      pDiv.appendChild(document.createTextNode(`${p.name} שיבץ לבורד זה: `));
+      const splitRow = document.createElement('div');
+      state.splits[p.id][i].forEach((c) => splitRow.appendChild(cardEl(c)));
+      pDiv.appendChild(splitRow);
+      div.appendChild(pDiv);
+    });
 
-  const holeHeader = document.createElement('h4');
-  holeHeader.textContent = 'קלפי כל השחקנים';
-  content.appendChild(holeHeader);
-  state.players.forEach((p) => {
-    const div = document.createElement('div');
-    div.textContent = p.name + ': ';
-    state.holeCards[p.id].forEach((c) => div.appendChild(cardEl(c)));
     content.appendChild(div);
   });
 }
