@@ -133,6 +133,10 @@
     background: linear-gradient(180deg, #ffe08a, #d9a441);
     color: #241512; border-color: #fff2c8;
   }
+  .mark-winner-btn.loser {
+    background: rgba(216,27,63,0.25);
+    color: #ff8080; border-color: #ff8080;
+  }
 
   .board {
     border: 1px solid rgba(217,164,65,0.5);
@@ -495,6 +499,8 @@ function renderResult(state) {
 
     state.players.forEach((p) => {
       const isWinner = boardWinners[i] === p.id;
+      const hasWinner = boardWinners[i] !== undefined;
+      const isLoser = hasWinner && !isWinner;
 
       const pDiv = document.createElement('div');
       pDiv.style.marginTop = '8px';
@@ -511,8 +517,17 @@ function renderResult(state) {
       nameRow.appendChild(label);
 
       const markBtn = document.createElement('button');
-      markBtn.textContent = isWinner ? '👑 מנצח הבורד' : 'סמן כמנצח';
-      markBtn.className = 'mark-winner-btn' + (isWinner ? ' active' : '');
+      let btnClass = 'mark-winner-btn';
+      if (isWinner) {
+        markBtn.textContent = 'WINNER';
+        btnClass += ' active';
+      } else if (isLoser) {
+        markBtn.textContent = 'LOSER';
+        btnClass += ' loser';
+      } else {
+        markBtn.textContent = 'סמן כמנצח';
+      }
+      markBtn.className = btnClass;
       markBtn.onclick = () => {
         socket.emit('set_board_winner', { board: i, playerId: p.id });
       };
