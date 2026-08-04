@@ -10,6 +10,7 @@ const {
   allPlayersLocked,
   resolveHand,
   getStateForPlayer,
+  updateManualScore,
 } = require('./src/gameEngine');
 
 const PORT = process.env.PORT || 3000;
@@ -103,6 +104,19 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('update_score', ({ targetPlayerId, value }, ack) => {
+    try {
+      const entry = socketRoom.get(socket.id);
+      const room = rooms.get(entry?.roomId);
+      if (!room) throw new Error('חדר לא נמצא');
+      const scoreState = updateManualScore(room, targetPlayerId, value);
+      io.to(room.id).emit('score_update', scoreState);
+      ack?.({ ok: true });
+    } catch (e) {
+      ack?.({ ok: false, error: e.message });
+    }
+  });
+
   socket.on('disconnect', () => {
     socketRoom.delete(socket.id);
   });
@@ -110,4 +124,14 @@ io.on('connection', (socket) => {
 
 httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`patzpatz server listening on :${PORT}`);
+  const os = require('os');
+  const nets = os.networkInterfaces();
+  console.log('לפתוח מהטלפון (באותו WiFi כמו המחשב), נסה אחת מהכתובות הבאות:');
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name]) {
+      if (net.family === 'IPv4' && !net.internal) {
+        console.log(`  http://${net.address}:${PORT}`);
+      }
+    }
+  }
 });
