@@ -204,6 +204,7 @@ let socket = null;
 let myPlayerId = 'p_' + Math.random().toString(36).slice(2, 8);
 let currentAssignment = { 0: [], 1: [], 2: [] };
 let selectedCard = null;
+let lastPhase = null;
 
 window.addEventListener('DOMContentLoaded', () => {
   if (window.location.protocol.startsWith('http')) {
@@ -230,10 +231,11 @@ function connect() {
   socket.on('disconnect', () => log('התנתק מהשרת'));
   socket.on('room_state', (state) => {
     log('עדכון מצב חדר, שלב: ' + state.phase);
-    if (state.phase === 'dealt') {
+    if (state.phase === 'dealt' && lastPhase !== 'dealt') {
       currentAssignment = { 0: [], 1: [], 2: [] };
       selectedCard = null;
     }
+    lastPhase = state.phase;
     renderState(state);
   });
 }
