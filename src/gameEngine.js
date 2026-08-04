@@ -6,7 +6,9 @@ const NUM_BOARDS = 3;
 const CARDS_PER_PLAYER = 12;
 const CARDS_PER_BOARD_SPLIT = 4;
 const MIN_PLAYERS = 2;
-const MAX_PLAYERS = 4;
+// מקסימום 3, לא 4: 4 שחקנים x 12 קלפים + 3 בורדים x 5 קלפים = 63 קלפים,
+// יותר מ-52 שיש בחפיסה אחת. 3 שחקנים = 51 קלפים, בדיוק מתחת לגבול.
+const MAX_PLAYERS = 3;
 
 function createRoom(roomId, boardValue = 10) {
   return {
@@ -29,7 +31,7 @@ function createRoom(roomId, boardValue = 10) {
 function addPlayer(room, playerId, name) {
   if (room.phase !== 'waiting') throw new Error('היד כבר התחילה, אי אפשר להצטרף עכשיו');
   if (room.players.some((p) => p.id === playerId)) return;
-  if (room.players.length >= MAX_PLAYERS) throw new Error('החדר מלא (מקסימום 4 שחקנים)');
+  if (room.players.length >= MAX_PLAYERS) throw new Error(`החדר מלא (מקסימום ${MAX_PLAYERS} שחקנים)`);
   room.players.push({ id: playerId, name });
   if (!(playerId in room.manualScores)) room.manualScores[playerId] = 0;
 }
@@ -56,6 +58,11 @@ function startHand(room) {
   if (room.phase === 'dealt') throw new Error('יד עדיין באמצע - אי אפשר להתחיל יד חדשה עכשיו');
   if (room.players.length < MIN_PLAYERS) throw new Error(`נדרשים לפחות ${MIN_PLAYERS} שחקנים`);
   if (room.players.length > MAX_PLAYERS) throw new Error(`מקסימום ${MAX_PLAYERS} שחקנים`);
+
+  const cardsNeeded = room.players.length * CARDS_PER_PLAYER + NUM_BOARDS * 5;
+  if (cardsNeeded > 52) {
+    throw new Error(`אין מספיק קלפים בחפיסה (נדרשים ${cardsNeeded}, יש 52) - הגנה פנימית, לא אמור לקרות`);
+  }
 
   const deck = shuffle(createDeck());
   let cursor = 0;
