@@ -124,6 +124,20 @@
   }
   .card.faded { opacity: 0.35; filter: grayscale(50%); }
 
+  .card.card-back {
+    cursor: default;
+    background: repeating-linear-gradient(45deg, var(--red) 0 6px, var(--red-dark) 6px 12px);
+    border: 1.5px solid var(--gold);
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .card.card-back .back-diamond {
+    width: 16px; height: 16px;
+    background: var(--gold);
+    transform: rotate(45deg);
+    border-radius: 2px;
+    box-shadow: 0 0 0 2px var(--felt-dark);
+  }
+
   .mark-winner-btn {
     width: auto; margin: 0; padding: 4px 12px; font-size: 11px;
     border-radius: 999px; border: 1.5px solid var(--gold);
@@ -419,6 +433,15 @@ function cardEl(cardStr, opts = {}) {
   return div;
 }
 
+function cardBackEl() {
+  const div = document.createElement('div');
+  div.className = 'card card-back';
+  const diamond = document.createElement('div');
+  diamond.className = 'back-diamond';
+  div.appendChild(diamond);
+  return div;
+}
+
 const RANK_ORDER = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'];
 function rankValue(cardStr) {
   return RANK_ORDER.indexOf(cardStr.slice(0, -1));
@@ -458,6 +481,8 @@ function renderHand(state) {
     const flopLabel = document.createElement('div');
     flopLabel.appendChild(document.createTextNode('פלופ: '));
     b.flop.forEach((c) => flopLabel.appendChild(cardEl(c)));
+    flopLabel.appendChild(cardBackEl());
+    flopLabel.appendChild(cardBackEl());
     div.appendChild(flopLabel);
 
     const myAssigned = document.createElement('div');
