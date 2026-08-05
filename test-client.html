@@ -310,7 +310,41 @@ function playClick() { playTone(880, 0, 0.07, 'square', 0.07); }
 function playStart() { playTone(392, 0, 0.09, 'triangle', 0.1); playTone(587, 0.07, 0.14, 'triangle', 0.12); }
 function playLock() { playTone(440, 0, 0.09, 'triangle', 0.11); playTone(660, 0.08, 0.12, 'triangle', 0.1); }
 function playScoreChange() { playTone(1046, 0, 0.08, 'sine', 0.11); playTone(1568, 0.06, 0.11, 'sine', 0.09); }
-function playCardFlip() { playTone(300, 0, 0.05, 'square', 0.05); playTone(220, 0.03, 0.06, 'square', 0.04); }
+function playCardFlip() {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+
+  const duration = 0.16;
+  const bufferSize = Math.floor(ctx.sampleRate * duration);
+  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) {
+    data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+  }
+
+  const noise = ctx.createBufferSource();
+  noise.buffer = buffer;
+
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.Q.value = 1.1;
+  const t0 = ctx.currentTime;
+  filter.frequency.setValueAtTime(2600, t0);
+  filter.frequency.exponentialRampToValueAtTime(450, t0 + duration);
+
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0, t0);
+  gain.gain.linearRampToValueAtTime(0.22, t0 + 0.012);
+  gain.gain.exponentialRampToValueAtTime(0.001, t0 + duration);
+
+  noise.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+  noise.start(t0);
+  noise.stop(t0 + duration + 0.02);
+
+  playTone(190, duration * 0.75, 0.05, 'triangle', 0.07);
+}
 function playDealTick() { playTone(700, 0, 0.04, 'sine', 0.05); }
 function playWinner() { playTone(523, 0, 0.11, 'triangle', 0.14); playTone(659, 0.09, 0.11, 'triangle', 0.14); playTone(784, 0.18, 0.18, 'triangle', 0.17); }
 
