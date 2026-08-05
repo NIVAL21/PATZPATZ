@@ -34,6 +34,25 @@ function serveClient(req, res) {
 
 const rooms = new Map();
 const socketRoom = new Map();
+const roomLastActivity = new Map();
+
+const ROOM_INACTIVITY_MS = 6 * 60 * 60 * 1000;
+const CLEANUP_INTERVAL_MS = 30 * 60 * 1000;
+
+function touchRoom(roomId) {
+  roomLastActivity.set(roomId, Date.now());
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [roomId, lastActive] of roomLastActivity.entries()) {
+    if (now - lastActive > ROOM_INACTIVITY_MS) {
+      rooms.delete(roomId);
+      roomLastActivity.delete(roomId);
+      console.log(`חדר "${roomId}" נמחק אוטומטית - לא פעיל מעל 6 שעות`);
+    }
+  }
+}, CLEANUP_INTERVAL_MS);
 
 function broadcastRoomState(io, room) {
   for (const player of room.players) {
@@ -69,6 +88,7 @@ io.on('connection', (socket) => {
       const room = createRoom(roomId, boardValue || 10);
       addPlayer(room, playerId, name);
       rooms.set(roomId, room);
+      touchRoom(roomId);
       socket.join(roomId);
       socketRoom.set(socket.id, { roomId, playerId });
       ack?.({ ok: true, state: getStateForPlayer(room, playerId) });
@@ -82,6 +102,7 @@ io.on('connection', (socket) => {
       const room = rooms.get(roomId);
       if (!room) throw new Error('חדר לא נמצא');
       addPlayer(room, playerId, name);
+      touchRoom(roomId);
       socket.join(roomId);
       socketRoom.set(socket.id, { roomId, playerId });
       ack?.({ ok: true, state: getStateForPlayer(room, playerId) });
@@ -97,6 +118,7 @@ io.on('connection', (socket) => {
       const room = rooms.get(entry?.roomId);
       if (!room) throw new Error('חדר לא נמצא');
       startHand(room);
+      touchRoom(entry.roomId);
       ack?.({ ok: true });
       broadcastRoomState(io, room);
     } catch (e) {
@@ -110,6 +132,7 @@ io.on('connection', (socket) => {
       const room = rooms.get(entry?.roomId);
       if (!room) throw new Error('חדר לא נמצא');
       submitSplit(room, entry.playerId, split);
+      touchRoom(entry.roomId);
       ack?.({ ok: true });
 
       if (allPlayersLocked(room)) {
@@ -130,6 +153,7 @@ io.on('connection', (socket) => {
       const room = rooms.get(entry?.roomId);
       if (!room) throw new Error('חדר לא נמצא');
       const scoreState = updateManualScore(room, targetPlayerId, value);
+      touchRoom(entry.roomId);
       io.to(room.id).emit('score_update', scoreState);
       ack?.({ ok: true });
     } catch (e) {
@@ -143,6 +167,7 @@ io.on('connection', (socket) => {
       const room = rooms.get(entry?.roomId);
       if (!room) throw new Error('חדר לא נמצא');
       setBoardWinner(room, board, playerId);
+      touchRoom(entry.roomId);
 
       let advanced = false;
       if (
