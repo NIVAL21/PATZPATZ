@@ -126,16 +126,33 @@
 
   .card.card-back {
     cursor: default;
-    background: repeating-linear-gradient(45deg, var(--red) 0 6px, var(--red-dark) 6px 12px);
     border: 1.5px solid var(--gold);
     display: inline-flex; align-items: center; justify-content: center;
   }
+  .card-back-teal {
+    background-color: #0d5c56;
+    background-image:
+      repeating-linear-gradient(45deg, rgba(255,255,255,0.14) 0 1px, transparent 1px 8px),
+      repeating-linear-gradient(-45deg, rgba(255,255,255,0.14) 0 1px, transparent 1px 8px);
+  }
+  .card-back-black {
+    background-color: #17130f;
+    background-image:
+      repeating-linear-gradient(45deg, rgba(217,164,65,0.2) 0 1px, transparent 1px 8px),
+      repeating-linear-gradient(-45deg, rgba(217,164,65,0.2) 0 1px, transparent 1px 8px);
+  }
+  .card-back-red {
+    background-color: #6e0f1f;
+    background-image:
+      repeating-linear-gradient(45deg, rgba(255,255,255,0.16) 0 1px, transparent 1px 8px),
+      repeating-linear-gradient(-45deg, rgba(255,255,255,0.16) 0 1px, transparent 1px 8px);
+  }
   .card.card-back .back-diamond {
-    width: 16px; height: 16px;
+    width: 15px; height: 15px;
     background: var(--gold);
     transform: rotate(45deg);
     border-radius: 2px;
-    box-shadow: 0 0 0 2px var(--felt-dark);
+    box-shadow: 0 0 0 2px rgba(0,0,0,0.4);
   }
 
   .mark-winner-btn {
@@ -433,14 +450,15 @@ function cardEl(cardStr, opts = {}) {
   return div;
 }
 
-function cardBackEl() {
+function cardBackEl(variant) {
   const div = document.createElement('div');
-  div.className = 'card card-back';
+  div.className = 'card card-back card-back-' + variant;
   const diamond = document.createElement('div');
   diamond.className = 'back-diamond';
   div.appendChild(diamond);
   return div;
 }
+const BACK_VARIANTS = ['teal', 'black', 'red'];
 
 const RANK_ORDER = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'];
 function rankValue(cardStr) {
@@ -481,8 +499,9 @@ function renderHand(state) {
     const flopLabel = document.createElement('div');
     flopLabel.appendChild(document.createTextNode('פלופ: '));
     b.flop.forEach((c) => flopLabel.appendChild(cardEl(c)));
-    flopLabel.appendChild(cardBackEl());
-    flopLabel.appendChild(cardBackEl());
+    const variant = BACK_VARIANTS[i % BACK_VARIANTS.length];
+    flopLabel.appendChild(cardBackEl(variant));
+    flopLabel.appendChild(cardBackEl(variant));
     div.appendChild(flopLabel);
 
     const myAssigned = document.createElement('div');
