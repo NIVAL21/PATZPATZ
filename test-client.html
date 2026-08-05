@@ -267,10 +267,9 @@
   <p class="onboarding-text">
     אחד מכם פותח חדר חדש עם קוד לבחירה, והשאר מצטרפים עם אותו קוד בדיוק.
   </p>
-  <input id="serverUrl" value="http://localhost:3000" placeholder="כתובת שרת">
-  <input id="roomId" value="test1" placeholder="קוד חדר">
+  <input id="roomId" placeholder="קוד חדר">
   <input id="playerName" placeholder="השם שלך">
-  <input id="boardValue" value="10" placeholder="שווי בורד">
+  <input id="boardValue" placeholder="שווי בורד">
   <div class="row">
     <button onclick="createRoom()">פתח חדר חדש</button>
     <button onclick="joinRoom()">הצטרף לחדר</button>
@@ -415,12 +414,6 @@ let isLocked = false;
 let lastDealtState = null;
 let pendingDealAnimation = false;
 
-window.addEventListener('DOMContentLoaded', () => {
-  if (window.location.protocol.startsWith('http')) {
-    document.getElementById('serverUrl').value = window.location.origin;
-  }
-});
-
 function log(msg) {
   const el = document.getElementById('log');
   el.textContent += msg + '\n';
@@ -433,8 +426,12 @@ function suitInfo(cardStr) {
   return { symbol: symbols[suit], isRed: suit === 'h' || suit === 'd' };
 }
 
+function getServerUrl() {
+  return window.location.protocol.startsWith('http') ? window.location.origin : 'http://localhost:3000';
+}
+
 function connect() {
-  const url = document.getElementById('serverUrl').value;
+  const url = getServerUrl();
   socket = io(url);
   socket.on('connect', () => log('מחובר לשרת: ' + socket.id));
   socket.on('disconnect', () => log('התנתק מהשרת'));
