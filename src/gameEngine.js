@@ -6,8 +6,6 @@ const NUM_BOARDS = 3;
 const CARDS_PER_PLAYER = 12;
 const CARDS_PER_BOARD_SPLIT = 4;
 const MIN_PLAYERS = 2;
-// מקסימום 3, לא 4: 4 שחקנים x 12 קלפים + 3 בורדים x 5 קלפים = 63 קלפים,
-// יותר מ-52 שיש בחפיסה אחת. 3 שחקנים = 51 קלפים, בדיוק מתחת לגבול.
 const MAX_PLAYERS = 3;
 
 function createRoom(roomId, boardValue = 10) {
@@ -25,6 +23,7 @@ function createRoom(roomId, boardValue = 10) {
     manualScores: {},
     scoreDirty: new Set(),
     boardWinners: {},
+    revealStage: null,
   };
 }
 
@@ -91,6 +90,7 @@ function startHand(room) {
   room.lockedPlayers = new Set();
   room.result = null;
   room.boardWinners = {};
+  room.revealStage = null;
   room.phase = 'dealt';
 }
 
@@ -157,6 +157,7 @@ function resolveHand(room) {
   );
 
   room.result = { net, pairDetails, handRanksByPlayer, bestHandCardsByPlayer };
+  room.revealStage = { boardIndex: 0, turnShown: false, riverShown: false };
   room.phase = 'revealed';
   return room.result;
 }
@@ -177,6 +178,19 @@ function setBoardWinner(room, boardIndex, playerId) {
   return { ...room.boardWinners };
 }
 
+function setRevealFlag(room, flag) {
+  if (!room.revealStage) return null;
+  room.revealStage[flag] = true;
+  return { ...room.revealStage };
+}
+
+function advanceRevealStage(room) {
+  if (!room.revealStage) return null;
+  if (room.revealStage.boardIndex >= NUM_BOARDS - 1) return { ...room.revealStage };
+  room.revealStage = { boardIndex: room.revealStage.boardIndex + 1, turnShown: false, riverShown: false };
+  return { ...room.revealStage };
+}
+
 function getStateForPlayer(room, viewerId) {
   const base = {
     id: room.id,
@@ -186,16 +200,27 @@ function getStateForPlayer(room, viewerId) {
     scores: { ...room.manualScores },
     scoreDirty: [...room.scoreDirty],
     boardWinners: { ...room.boardWinners },
+    revealStage: room.revealStage ? { ...room.revealStage } : null,
   };
 
   if (room.phase === 'waiting') return base;
 
   base.myHoleCards = room.holeCards[viewerId] || null;
-  base.boards = room.boards.map((b) => ({
-    flop: b.flop,
-    turn: room.phase === 'revealed' ? b.turn : null,
-    river: room.phase === 'revealed' ? b.river : null,
-  }));
+  base.boards = room.boards.map((b, idx) => {
+    if (room.phase !== 'revealed' || !room.revealStage) {
+      return { flop: b.flop, turn: null, river: null };
+    }
+    const stage = room.revealStage;
+    const isPast = idx < stage.boardIndex;
+    const isActive = idx === stage.boardIndex;
+    const showTurn = isPast || (isActive && stage.turnShown);
+    const showRiver = isPast || (isActive && stage.riverShown);
+    return {
+      flop: b.flop,
+      turn: showTurn ? b.turn : null,
+      river: showRiver ? b.river : null,
+    };
+  });
 
   if (room.phase === 'revealed') {
     base.holeCards = room.holeCards;
@@ -216,6 +241,8 @@ module.exports = {
   getStateForPlayer,
   updateManualScore,
   setBoardWinner,
+  setRevealFlag,
+  advanceRevealStage,
   NUM_BOARDS,
   MIN_PLAYERS,
   MAX_PLAYERS,
