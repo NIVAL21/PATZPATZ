@@ -12,6 +12,9 @@ const {
   getStateForPlayer,
   updateManualScore,
   setBoardWinner,
+  setRevealFlag,
+  advanceRevealStage,
+  NUM_BOARDS,
 } = require('./src/gameEngine');
 
 const PORT = process.env.PORT || 3000;
@@ -41,6 +44,19 @@ function broadcastRoomState(io, room) {
     const [socketId] = socketEntry;
     io.to(socketId).emit('room_state', getStateForPlayer(room, player.id));
   }
+}
+
+function scheduleReveal(room) {
+  setTimeout(() => {
+    if (!room.revealStage) return;
+    setRevealFlag(room, 'turnShown');
+    broadcastRoomState(io, room);
+    setTimeout(() => {
+      if (!room.revealStage) return;
+      setRevealFlag(room, 'riverShown');
+      broadcastRoomState(io, room);
+    }, 1300);
+  }, 700);
 }
 
 const httpServer = http.createServer(serveClient);
@@ -98,8 +114,11 @@ io.on('connection', (socket) => {
 
       if (allPlayersLocked(room)) {
         resolveHand(room);
+        broadcastRoomState(io, room);
+        scheduleReveal(room);
+      } else {
+        broadcastRoomState(io, room);
       }
-      broadcastRoomState(io, room);
     } catch (e) {
       ack?.({ ok: false, error: e.message });
     }
@@ -123,8 +142,21 @@ io.on('connection', (socket) => {
       const entry = socketRoom.get(socket.id);
       const room = rooms.get(entry?.roomId);
       if (!room) throw new Error('חדר לא נמצא');
-      const boardWinners = setBoardWinner(room, board, playerId);
-      io.to(room.id).emit('board_winner_update', { boardWinners });
+      setBoardWinner(room, board, playerId);
+
+      let advanced = false;
+      if (
+        playerId !== null &&
+        room.revealStage &&
+        board === room.revealStage.boardIndex &&
+        room.revealStage.boardIndex < NUM_BOARDS - 1
+      ) {
+        advanceRevealStage(room);
+        advanced = true;
+      }
+
+      broadcastRoomState(io, room);
+      if (advanced) scheduleReveal(room);
       ack?.({ ok: true });
     } catch (e) {
       ack?.({ ok: false, error: e.message });
