@@ -369,4 +369,461 @@ function playCardFlip() {
     data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
   }
 
-  const noise =
+  const noise = ctx.createBufferSource();
+  noise.buffer = buffer;
+
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.Q.value = 1.1;
+  const t0 = ctx.currentTime;
+  filter.frequency.setValueAtTime(2600, t0);
+  filter.frequency.exponentialRampToValueAtTime(450, t0 + duration);
+
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0, t0);
+  gain.gain.linearRampToValueAtTime(0.22, t0 + 0.012);
+  gain.gain.exponentialRampToValueAtTime(0.001, t0 + duration);
+
+  noise.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+  noise.start(t0);
+  noise.stop(t0 + duration + 0.02);
+
+  playTone(190, duration * 0.75, 0.05, 'triangle', 0.07);
+}
+function playDealTick() { playTone(700, 0, 0.04, 'sine', 0.05); }
+function playWinner() { playTone(523, 0, 0.11, 'triangle', 0.14); playTone(659, 0.09, 0.11, 'triangle', 0.14); playTone(784, 0.18, 0.18, 'triangle', 0.17); }
+
+let socket = null;
+function getOrCreatePlayerId() {
+  try {
+    const saved = localStorage.getItem('patzpatz_player_id');
+    if (saved) return saved;
+    const fresh = 'p_' + Math.random().toString(36).slice(2, 8);
+    localStorage.setItem('patzpatz_player_id', fresh);
+    return fresh;
+  } catch (e) {
+    return 'p_' + Math.random().toString(36).slice(2, 8);
+  }
+}
+let myPlayerId = getOrCreatePlayerId();
+let currentAssignment = { 0: [], 1: [], 2: [] };
+let selectedCard = null;
+let lastPhase = null;
+let isLocked = false;
+let lastDealtState = null;
+let pendingDealAnimation = false;
+
+window.addEventListener('DOMContentLoaded', () => {
+  if (window.location.protocol.startsWith('http')) {
+    document.getElementById('serverUrl').value = window.location.origin;
+  }
+});
+
+function log(msg) {
+  const el = document.getElementById('log');
+  el.textContent += msg + '\n';
+  el.scrollTop = el.scrollHeight;
+}
+
+function suitInfo(cardStr) {
+  const suit = cardStr.slice(-1);
+  const symbols = { s: '♠', h: '♥', d: '♦', c: '♣' };
+  return { symbol: symbols[suit], isRed: suit === 'h' || suit === 'd' };
+}
+
+function connect() {
+  const url = document.getElementById('serverUrl').value;
+  socket = io(url);
+  socket.on('connect', () => log('מחובר לשרת: ' + socket.id));
+  socket.on('disconnect', () => log('התנתק מהשרת'));
+  socket.on('room_state', (state) => {
+    log('עדכון מצב חדר, שלב: ' + state.phase);
+    if (state.phase === 'dealt' && lastPhase !== 'dealt') {
+      currentAssignment = { 0: [], 1: [], 2: [] };
+      selectedCard = null;
+      isLocked = false;
+      pendingDealAnimation = true;
+    }
+    lastPhase = state.phase;
+    renderState(state);
+  });
+  socket.on('score_update', ({ scores }) => {
+    applyScores(scores);
+  });
+}
+
+function createRoom() {
+  playClick();
+  connect();
+  const roomId = document.getElementById('roomId').value;
+  const name = document.getElementById('playerName').value || 'שחקן';
+  const boardValue = Number(document.getElementById('boardValue').value) || 10;
+  socket.once('connect', () => {
+    socket.emit('create_room', { roomId, playerId: myPlayerId, name, boardValue }, (res) => {
+      if (!res.ok) return log('שגיאה: ' + res.error);
+      log('חדר נפתח בהצלחה');
+      enterRoomView(roomId);
+      renderState(res.state);
+    });
+  });
+}
+
+function joinRoom() {
+  playClick();
+  connect();
+  const roomId = document.getElementById('roomId').value;
+  const name = document.getElementById('playerName').value || 'שחקן';
+  socket.once('connect', () => {
+    socket.emit('join_room', { roomId, playerId: myPlayerId, name }, (res) => {
+      if (!res.ok) return log('שגיאה: ' + res.error);
+      log('הצטרפת לחדר בהצלחה');
+      enterRoomView(roomId);
+      renderState(res.state);
+    });
+  });
+}
+
+function enterRoomView(roomId) {
+  document.getElementById('setup').classList.add('hidden');
+  document.getElementById('roomView').classList.remove('hidden');
+  document.getElementById('roomIdLabel').textContent = roomId;
+}
+
+function startHand() {
+  playStart();
+  socket.emit('start_hand', {}, (res) => {
+    if (!res.ok) log('שגיאה בהתחלת יד: ' + res.error);
+  });
+}
+
+let lastScorePlayerIds = '';
+
+function updateScoreColor(input) {
+  const val = Number(input.value) || 0;
+  input.classList.remove('pos', 'neg');
+  if (val > 0) input.classList.add('pos');
+  else if (val < 0) input.classList.add('neg');
+}
+
+function applyScores(scores) {
+  Object.entries(scores || {}).forEach(([playerId, value]) => {
+    const input = document.querySelector(`#scoreRows input[data-player-id="${playerId}"]`);
+    if (!input) return;
+    if (document.activeElement === input) return;
+    if (String(value) !== input.value) playScoreChange();
+    input.value = value;
+    updateScoreColor(input);
+  });
+}
+
+function renderScoreBox(players, scores) {
+  const idsKey = players.map((p) => p.id).join(',');
+  if (idsKey === lastScorePlayerIds) return;
+  lastScorePlayerIds = idsKey;
+
+  const container = document.getElementById('scoreRows');
+  container.innerHTML = '';
+  players.forEach((p) => {
+    const row = document.createElement('div');
+    row.className = 'score-row';
+
+    const name = document.createElement('span');
+    name.className = 'score-name';
+    name.textContent = p.name;
+
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.value = (scores && scores[p.id]) || 0;
+    input.dataset.playerId = p.id;
+    updateScoreColor(input);
+    input.oninput = () => {
+      updateScoreColor(input);
+      playScoreChange();
+      socket.emit('update_score', { targetPlayerId: p.id, value: Number(input.value) || 0 });
+    };
+
+    row.appendChild(name);
+    row.appendChild(input);
+    container.appendChild(row);
+  });
+}
+
+function renderState(state) {
+  const playersList = document.getElementById('playersList');
+  playersList.innerHTML = '';
+  state.players.forEach((p) => {
+    const li = document.createElement('li');
+    let statusText = '';
+    if (state.phase === 'dealt') {
+      statusText = p.locked ? ' — ✅ ננעל' : ' — 🕐 בוחר קלפים...';
+    } else if (p.locked) {
+      statusText = ' ✓ ננעל';
+    }
+    li.textContent = p.name + (p.id === myPlayerId ? ' (אתה)' : '') + statusText;
+    if (p.locked) li.className = 'locked';
+    playersList.appendChild(li);
+  });
+
+  renderScoreBox(state.players, state.scores);
+
+  document.getElementById('startBtn').classList.toggle('hidden', state.phase !== 'waiting' || state.players.length < 2);
+
+  document.getElementById('handView').classList.add('hidden');
+  document.getElementById('resultView').classList.add('hidden');
+
+  if (state.phase === 'dealt') {
+    document.getElementById('handView').classList.remove('hidden');
+    renderHand(state);
+  } else if (state.phase === 'revealed') {
+    document.getElementById('resultView').classList.remove('hidden');
+    renderResult(state);
+  }
+}
+
+function cardEl(cardStr, opts = {}) {
+  const { symbol, isRed } = suitInfo(cardStr);
+  const rank = cardStr.slice(0, -1);
+  const div = document.createElement('div');
+  div.className = 'card ' + (isRed ? 'red' : 'black')
+    + (opts.selected ? ' selected' : '')
+    + (opts.assigned ? ' assigned' : '')
+    + (opts.winner ? ' winner-glow' : '')
+    + (opts.faded ? ' faded' : '')
+    + (opts.flip ? ' flip-in' : '')
+    + (opts.onClick ? '' : ' static');
+  div.innerHTML = `<span class="rank">${rank}</span><span class="suit-big">${symbol}</span>`;
+  if (opts.onClick) div.onclick = opts.onClick;
+  return div;
+}
+
+function cardBackEl(variant) {
+  const div = document.createElement('div');
+  div.className = 'card card-back card-back-' + variant;
+  const diamond = document.createElement('div');
+  diamond.className = 'back-diamond';
+  div.appendChild(diamond);
+  return div;
+}
+const BACK_VARIANTS = ['teal', 'black', 'red'];
+
+const RANK_ORDER = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'];
+function rankValue(cardStr) {
+  return RANK_ORDER.indexOf(cardStr.slice(0, -1));
+}
+function sortByRankDesc(cards) {
+  return [...cards].sort((a, b) => rankValue(b) - rankValue(a));
+}
+
+function renderHand(state) {
+  lastDealtState = state;
+  const myCardsEl = document.getElementById('myCards');
+  myCardsEl.innerHTML = '';
+  const assignedCards = new Set([...currentAssignment[0], ...currentAssignment[1], ...currentAssignment[2]]);
+
+  const animateDeal = pendingDealAnimation;
+  pendingDealAnimation = false;
+
+  sortByRankDesc(state.myHoleCards).forEach((c, idx) => {
+    const isAssigned = assignedCards.has(c);
+    const cardDiv = cardEl(c, {
+      selected: c === selectedCard,
+      assigned: isAssigned,
+      onClick: isLocked ? undefined : () => {
+        if (isAssigned) return;
+        selectedCard = (selectedCard === c) ? null : c;
+        renderHand(state);
+      },
+    });
+    if (animateDeal) {
+      cardDiv.classList.add('deal-in');
+      cardDiv.style.animationDelay = (idx * 90) + 'ms';
+      setTimeout(playDealTick, idx * 90);
+    }
+    myCardsEl.appendChild(cardDiv);
+  });
+
+  const boardsEl = document.getElementById('boardsView');
+  boardsEl.innerHTML = '';
+  state.boards.forEach((b, i) => {
+    const div = document.createElement('div');
+    div.className = 'board';
+    const h4 = document.createElement('h4');
+    h4.textContent = `בורד ${i + 1} (${currentAssignment[i].length}/4)`;
+    div.appendChild(h4);
+
+    const flopLabel = document.createElement('div');
+    flopLabel.appendChild(document.createTextNode('פלופ: '));
+    b.flop.forEach((c) => flopLabel.appendChild(cardEl(c)));
+    const variant = BACK_VARIANTS[i % BACK_VARIANTS.length];
+    flopLabel.appendChild(cardBackEl(variant));
+    flopLabel.appendChild(cardBackEl(variant));
+    div.appendChild(flopLabel);
+
+    const myAssigned = document.createElement('div');
+    myAssigned.appendChild(document.createTextNode('הקלפים שהוקצו: '));
+    currentAssignment[i].forEach((c) => {
+      myAssigned.appendChild(cardEl(c, isLocked ? {} : { onClick: () => {
+        currentAssignment[i] = currentAssignment[i].filter((x) => x !== c);
+        renderHand(state);
+      }}));
+    });
+    div.appendChild(myAssigned);
+
+    const assignBtn = document.createElement('button');
+    assignBtn.textContent = `הקצה קלף נבחר לבורד ${i + 1}`;
+    assignBtn.disabled = isLocked || !selectedCard || currentAssignment[i].length >= 4;
+    assignBtn.onclick = () => {
+      if (isLocked || !selectedCard) return;
+      playClick();
+      currentAssignment[i].push(selectedCard);
+      selectedCard = null;
+      renderHand(state);
+    };
+    div.appendChild(assignBtn);
+
+    boardsEl.appendChild(div);
+  });
+
+  const total = currentAssignment[0].length + currentAssignment[1].length + currentAssignment[2].length;
+  const submitBtn = document.getElementById('submitBtn');
+  if (isLocked) {
+    submitBtn.textContent = 'ננעל ✓ — ממתין לשאר השחקנים...';
+    submitBtn.disabled = true;
+  } else {
+    submitBtn.textContent = `נעל חלוקה (${total}/12 הוקצו)`;
+    submitBtn.disabled = total !== 12;
+  }
+}
+
+function submitSplit() {
+  playLock();
+  socket.emit('submit_split', { split: currentAssignment }, (res) => {
+    if (!res.ok) return log('שגיאה בנעילה: ' + res.error);
+    log('החלוקה שלך ננעלה, ממתין לשאר השחקנים...');
+    isLocked = true;
+    if (lastDealtState) renderHand(lastDealtState);
+  });
+}
+
+let lastRevealedState = null;
+let lastKnownReveal = { boardIndex: -1, turnShown: false, riverShown: false };
+
+function renderResult(state) {
+  lastRevealedState = state;
+  const content = document.getElementById('resultContent');
+  content.innerHTML = '';
+
+  const boardWinners = state.boardWinners || {};
+  const reveal = state.revealStage || { boardIndex: state.boards.length - 1, turnShown: true, riverShown: true };
+
+  state.boards.forEach((b, i) => {
+    const div = document.createElement('div');
+    div.className = 'board';
+    const h4 = document.createElement('h4');
+    h4.textContent = `בורד ${i + 1}`;
+    div.appendChild(h4);
+
+    const isPast = i < reveal.boardIndex;
+    const isActive = i === reveal.boardIndex;
+    const isFuture = i > reveal.boardIndex;
+    const showTurn = isPast || (isActive && reveal.turnShown);
+    const showRiver = isPast || (isActive && reveal.riverShown);
+
+    const justRevealedTurn = isActive && reveal.turnShown &&
+      !(lastKnownReveal.boardIndex === i && lastKnownReveal.turnShown);
+    const justRevealedRiver = isActive && reveal.riverShown &&
+      !(lastKnownReveal.boardIndex === i && lastKnownReveal.riverShown);
+    if (justRevealedTurn || justRevealedRiver) playCardFlip();
+
+    const variant = BACK_VARIANTS[i % BACK_VARIANTS.length];
+    const cardsRow = document.createElement('div');
+    b.flop.forEach((c) => cardsRow.appendChild(cardEl(c)));
+    cardsRow.appendChild(
+      showTurn && b.turn ? cardEl(b.turn, { flip: justRevealedTurn }) : cardBackEl(variant)
+    );
+    cardsRow.appendChild(
+      showRiver && b.river ? cardEl(b.river, { flip: justRevealedRiver }) : cardBackEl(variant)
+    );
+    div.appendChild(cardsRow);
+
+    if (isFuture) {
+      const waitLabel = document.createElement('div');
+      waitLabel.style.fontSize = '12px';
+      waitLabel.style.color = 'var(--muted)';
+      waitLabel.textContent = 'ממתין לסיום הבורד הקודם...';
+      div.appendChild(waitLabel);
+      content.appendChild(div);
+      return;
+    }
+
+    if (isActive && !showRiver) {
+      const waitLabel = document.createElement('div');
+      waitLabel.style.fontSize = '12px';
+      waitLabel.style.color = 'var(--muted)';
+      waitLabel.textContent = 'חושף...';
+      div.appendChild(waitLabel);
+      content.appendChild(div);
+      return;
+    }
+
+    state.players.forEach((p) => {
+      const isWinner = boardWinners[i] === p.id;
+      const hasWinner = boardWinners[i] !== undefined;
+      const isLoser = hasWinner && !isWinner;
+
+      const pDiv = document.createElement('div');
+      pDiv.style.marginTop = '10px';
+      pDiv.style.fontSize = '13px';
+
+      const nameRow = document.createElement('div');
+      nameRow.style.display = 'flex';
+      nameRow.style.alignItems = 'center';
+      nameRow.style.gap = '8px';
+      nameRow.style.flexWrap = 'wrap';
+
+      const label = document.createElement('span');
+      label.textContent = `${p.name}:`;
+      nameRow.appendChild(label);
+
+      const markBtn = document.createElement('button');
+      let btnClass = 'mark-winner-btn';
+      if (isWinner) {
+        markBtn.textContent = 'WINNER';
+        btnClass += ' active';
+      } else if (isLoser) {
+        markBtn.textContent = 'LOSER';
+        btnClass += ' loser';
+      } else {
+        markBtn.textContent = 'סמן כמנצח';
+      }
+      markBtn.className = btnClass;
+      markBtn.onclick = () => {
+        if (!isWinner) playWinner();
+        socket.emit('set_board_winner', { board: i, playerId: p.id });
+      };
+      nameRow.appendChild(markBtn);
+
+      pDiv.appendChild(nameRow);
+
+      const splitLabel = document.createElement('div');
+      splitLabel.textContent = 'שיבץ לבורד זה:';
+      pDiv.appendChild(splitLabel);
+      const splitRow = document.createElement('div');
+      state.splits[p.id][i].forEach((c) => {
+        splitRow.appendChild(cardEl(c, { winner: isWinner }));
+      });
+      pDiv.appendChild(splitRow);
+
+      div.appendChild(pDiv);
+    });
+
+    content.appendChild(div);
+  });
+
+  lastKnownReveal = { boardIndex: reveal.boardIndex, turnShown: reveal.turnShown, riverShown: reveal.riverShown };
+}
+</script>
+</body>
+</html>
