@@ -28,8 +28,8 @@ function createRoom(roomId, boardValue = 10) {
 }
 
 function addPlayer(room, playerId, name) {
+  if (room.players.some((p) => p.id === playerId)) return; // כבר בחדר - מותר לחזור (reconnect) בכל שלב
   if (room.phase !== 'waiting') throw new Error('היד כבר התחילה, אי אפשר להצטרף עכשיו');
-  if (room.players.some((p) => p.id === playerId)) return;
   if (room.players.length >= MAX_PLAYERS) throw new Error(`החדר מלא (מקסימום ${MAX_PLAYERS} שחקנים)`);
   room.players.push({ id: playerId, name });
   if (!(playerId in room.manualScores)) room.manualScores[playerId] = 0;
