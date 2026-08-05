@@ -133,6 +133,14 @@
     animation: flipReveal 0.45s ease-out;
   }
 
+  @keyframes dealIn {
+    0% { opacity: 0; transform: translateY(-18px) scale(0.7); }
+    100% { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .card.deal-in {
+    animation: dealIn 0.3s ease-out both;
+  }
+
   .card.card-back {
     cursor: default;
     border: 1.5px solid var(--gold);
@@ -269,6 +277,43 @@
 </div>
 
 <script>
+// === מנוע צלילים - מייצר צלילים בקוד עצמו, בלי קבצי סאונד חיצוניים ===
+let audioCtx = null;
+function getAudioCtx() {
+  if (!audioCtx) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return null;
+    audioCtx = new Ctx();
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+function playTone(freq, startTime, duration, type, gainPeak) {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = type || 'sine';
+  osc.frequency.value = freq;
+  const t0 = ctx.currentTime + startTime;
+  gain.gain.setValueAtTime(0, t0);
+  gain.gain.linearRampToValueAtTime(gainPeak || 0.12, t0 + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.001, t0 + duration);
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(t0);
+  osc.stop(t0 + duration + 0.02);
+}
+
+function playClick() { playTone(880, 0, 0.07, 'square', 0.07); }
+function playStart() { playTone(392, 0, 0.09, 'triangle', 0.1); playTone(587, 0.07, 0.14, 'triangle', 0.12); }
+function playLock() { playTone(440, 0, 0.09, 'triangle', 0.11); playTone(660, 0.08, 0.12, 'triangle', 0.1); }
+function playScoreChange() { playTone(1046, 0, 0.08, 'sine', 0.11); playTone(1568, 0.06, 0.11, 'sine', 0.09); }
+function playCardFlip() { playTone(300, 0, 0.05, 'square', 0.05); playTone(220, 0.03, 0.06, 'square', 0.04); }
+function playDealTick() { playTone(700, 0, 0.04, 'sine', 0.05); }
+function playWinner() { playTone(523, 0, 0.11, 'triangle', 0.14); playTone(659, 0.09, 0.11, 'triangle', 0.14); playTone(784, 0.18, 0.18, 'triangle', 0.17); }
+
 let socket = null;
 let myPlayerId = 'p_' + Math.random().toString(36).slice(2, 8);
 let currentAssignment = { 0: [], 1: [], 2: [] };
@@ -276,6 +321,7 @@ let selectedCard = null;
 let lastPhase = null;
 let isLocked = false;
 let lastDealtState = null;
+let pendingDealAnimation = false;
 
 window.addEventListener('DOMContentLoaded', () => {
   if (window.location.protocol.startsWith('http')) {
@@ -306,6 +352,7 @@ function connect() {
       currentAssignment = { 0: [], 1: [], 2: [] };
       selectedCard = null;
       isLocked = false;
+      pendingDealAnimation = true;
     }
     lastPhase = state.phase;
     renderState(state);
@@ -316,6 +363,7 @@ function connect() {
 }
 
 function createRoom() {
+  playClick();
   connect();
   const roomId = document.getElementById('roomId').value;
   const name = document.getElementById('playerName').value || 'שחקן';
@@ -331,6 +379,7 @@ function createRoom() {
 }
 
 function joinRoom() {
+  playClick();
   connect();
   const roomId = document.getElementById('roomId').value;
   const name = document.getElementById('playerName').value || 'שחקן';
@@ -351,6 +400,7 @@ function enterRoomView(roomId) {
 }
 
 function startHand() {
+  playStart();
   socket.emit('start_hand', {}, (res) => {
     if (!res.ok) log('שגיאה בהתחלת יד: ' + res.error);
   });
@@ -370,6 +420,7 @@ function applyScores(scores) {
     const input = document.querySelector(`#scoreRows input[data-player-id="${playerId}"]`);
     if (!input) return;
     if (document.activeElement === input) return;
+    if (String(value) !== input.value) playScoreChange();
     input.value = value;
     updateScoreColor(input);
   });
@@ -397,6 +448,7 @@ function renderScoreBox(players, scores) {
     updateScoreColor(input);
     input.oninput = () => {
       updateScoreColor(input);
+      playScoreChange();
       socket.emit('update_score', { targetPlayerId: p.id, value: Number(input.value) || 0 });
     };
 
@@ -478,9 +530,12 @@ function renderHand(state) {
   myCardsEl.innerHTML = '';
   const assignedCards = new Set([...currentAssignment[0], ...currentAssignment[1], ...currentAssignment[2]]);
 
-  sortByRankDesc(state.myHoleCards).forEach((c) => {
+  const animateDeal = pendingDealAnimation;
+  pendingDealAnimation = false;
+
+  sortByRankDesc(state.myHoleCards).forEach((c, idx) => {
     const isAssigned = assignedCards.has(c);
-    myCardsEl.appendChild(cardEl(c, {
+    const cardDiv = cardEl(c, {
       selected: c === selectedCard,
       assigned: isAssigned,
       onClick: isLocked ? undefined : () => {
@@ -488,7 +543,13 @@ function renderHand(state) {
         selectedCard = (selectedCard === c) ? null : c;
         renderHand(state);
       },
-    }));
+    });
+    if (animateDeal) {
+      cardDiv.classList.add('deal-in');
+      cardDiv.style.animationDelay = (idx * 90) + 'ms';
+      setTimeout(playDealTick, idx * 90);
+    }
+    myCardsEl.appendChild(cardDiv);
   });
 
   const boardsEl = document.getElementById('boardsView');
@@ -523,6 +584,7 @@ function renderHand(state) {
     assignBtn.disabled = isLocked || !selectedCard || currentAssignment[i].length >= 4;
     assignBtn.onclick = () => {
       if (isLocked || !selectedCard) return;
+      playClick();
       currentAssignment[i].push(selectedCard);
       selectedCard = null;
       renderHand(state);
@@ -544,6 +606,7 @@ function renderHand(state) {
 }
 
 function submitSplit() {
+  playLock();
   socket.emit('submit_split', { split: currentAssignment }, (res) => {
     if (!res.ok) return log('שגיאה בנעילה: ' + res.error);
     log('החלוקה שלך ננעלה, ממתין לשאר השחקנים...');
@@ -580,6 +643,7 @@ function renderResult(state) {
       !(lastKnownReveal.boardIndex === i && lastKnownReveal.turnShown);
     const justRevealedRiver = isActive && reveal.riverShown &&
       !(lastKnownReveal.boardIndex === i && lastKnownReveal.riverShown);
+    if (justRevealedTurn || justRevealedRiver) playCardFlip();
 
     const variant = BACK_VARIANTS[i % BACK_VARIANTS.length];
     const cardsRow = document.createElement('div');
@@ -644,6 +708,7 @@ function renderResult(state) {
       }
       markBtn.className = btnClass;
       markBtn.onclick = () => {
+        if (!isWinner) playWinner();
         socket.emit('set_board_winner', { board: i, playerId: p.id });
       };
       nameRow.appendChild(markBtn);
