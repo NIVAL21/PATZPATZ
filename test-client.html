@@ -124,6 +124,15 @@
   }
   .card.faded { opacity: 0.35; filter: grayscale(50%); }
 
+  @keyframes flipReveal {
+    0% { transform: scaleX(0) rotateY(0deg); }
+    50% { transform: scaleX(0.05); }
+    100% { transform: scaleX(1); }
+  }
+  .card.flip-in {
+    animation: flipReveal 0.45s ease-out;
+  }
+
   .card.card-back {
     cursor: default;
     border: 1.5px solid var(--gold);
@@ -304,12 +313,6 @@ function connect() {
   socket.on('score_update', ({ scores }) => {
     applyScores(scores);
   });
-  socket.on('board_winner_update', ({ boardWinners }) => {
-    if (lastRevealedState) {
-      lastRevealedState.boardWinners = boardWinners;
-      renderResult(lastRevealedState);
-    }
-  });
 }
 
 function createRoom() {
@@ -444,6 +447,7 @@ function cardEl(cardStr, opts = {}) {
     + (opts.assigned ? ' assigned' : '')
     + (opts.winner ? ' winner-glow' : '')
     + (opts.faded ? ' faded' : '')
+    + (opts.flip ? ' flip-in' : '')
     + (opts.onClick ? '' : ' static');
   div.innerHTML = `<span class="rank">${rank}</span><span class="suit-big">${symbol}</span>`;
   if (opts.onClick) div.onclick = opts.onClick;
@@ -549,6 +553,7 @@ function submitSplit() {
 }
 
 let lastRevealedState = null;
+let lastKnownReveal = { boardIndex: -1, turnShown: false, riverShown: false };
 
 function renderResult(state) {
   lastRevealedState = state;
@@ -556,6 +561,7 @@ function renderResult(state) {
   content.innerHTML = '';
 
   const boardWinners = state.boardWinners || {};
+  const reveal = state.revealStage || { boardIndex: state.boards.length - 1, turnShown: true, riverShown: true };
 
   state.boards.forEach((b, i) => {
     const div = document.createElement('div');
@@ -564,9 +570,47 @@ function renderResult(state) {
     h4.textContent = `בורד ${i + 1}`;
     div.appendChild(h4);
 
+    const isPast = i < reveal.boardIndex;
+    const isActive = i === reveal.boardIndex;
+    const isFuture = i > reveal.boardIndex;
+    const showTurn = isPast || (isActive && reveal.turnShown);
+    const showRiver = isPast || (isActive && reveal.riverShown);
+
+    const justRevealedTurn = isActive && reveal.turnShown &&
+      !(lastKnownReveal.boardIndex === i && lastKnownReveal.turnShown);
+    const justRevealedRiver = isActive && reveal.riverShown &&
+      !(lastKnownReveal.boardIndex === i && lastKnownReveal.riverShown);
+
+    const variant = BACK_VARIANTS[i % BACK_VARIANTS.length];
     const cardsRow = document.createElement('div');
-    [...b.flop, b.turn, b.river].forEach((c) => cardsRow.appendChild(cardEl(c)));
+    b.flop.forEach((c) => cardsRow.appendChild(cardEl(c)));
+    cardsRow.appendChild(
+      showTurn && b.turn ? cardEl(b.turn, { flip: justRevealedTurn }) : cardBackEl(variant)
+    );
+    cardsRow.appendChild(
+      showRiver && b.river ? cardEl(b.river, { flip: justRevealedRiver }) : cardBackEl(variant)
+    );
     div.appendChild(cardsRow);
+
+    if (isFuture) {
+      const waitLabel = document.createElement('div');
+      waitLabel.style.fontSize = '12px';
+      waitLabel.style.color = 'var(--muted)';
+      waitLabel.textContent = 'ממתין לסיום הבורד הקודם...';
+      div.appendChild(waitLabel);
+      content.appendChild(div);
+      return;
+    }
+
+    if (isActive && !showRiver) {
+      const waitLabel = document.createElement('div');
+      waitLabel.style.fontSize = '12px';
+      waitLabel.style.color = 'var(--muted)';
+      waitLabel.textContent = 'חושף...';
+      div.appendChild(waitLabel);
+      content.appendChild(div);
+      return;
+    }
 
     state.players.forEach((p) => {
       const isWinner = boardWinners[i] === p.id;
@@ -620,6 +664,8 @@ function renderResult(state) {
 
     content.appendChild(div);
   });
+
+  lastKnownReveal = { boardIndex: reveal.boardIndex, turnShown: reveal.turnShown, riverShown: reveal.riverShown };
 }
 </script>
 </body>
